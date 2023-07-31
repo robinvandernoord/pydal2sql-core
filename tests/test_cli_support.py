@@ -7,10 +7,12 @@ import pytest
 from contextlib_chdir import chdir
 
 from src.pydal2sql_core.cli_support import (
+    ensure_no_migrate_on_real_db,
     extract_file_versions_and_paths,
     find_git_root,
     get_absolute_path_info,
-    get_file_for_version, ensure_no_migrate_on_real_db, handle_cli,
+    get_file_for_version,
+    handle_cli,
 )
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 from tests.mock_git import mock_git
@@ -48,15 +50,19 @@ def test_extract_file_versions_and_paths():
 def test_ensure_no_migrate_on_real_db():
     # test local import:
 
-    code = textwrap.dedent("""
+    code = textwrap.dedent(
+        """
     from .common import db
 
     database.define_tables('something_else')
-    """)
+    """
+    )
 
-    target = textwrap.dedent("""
+    target = textwrap.dedent(
+        """
     database.define_tables('something_else')
-    """)
+    """
+    )
 
     with pytest.raises(ValueError):
         ensure_no_migrate_on_real_db(code, fix=False)
@@ -65,19 +71,23 @@ def test_ensure_no_migrate_on_real_db():
 
     # test local import AND definition:
 
-    code = textwrap.dedent("""
+    code = textwrap.dedent(
+        """
     from .common import db
     
     database = DAL()
     
     db.define_tables('something')
     database.define_tables('something_else')
-    """)
+    """
+    )
 
-    target = textwrap.dedent("""
+    target = textwrap.dedent(
+        """
     db.define_tables('something')
     database.define_tables('something_else')
-    """)
+    """
+    )
 
     with pytest.raises(ValueError):
         ensure_no_migrate_on_real_db(code, fix=False)
@@ -139,14 +149,14 @@ def test_handle_cli(capsys):
         """
     )
 
-    assert handle_cli(before, after, db_type='psql')
+    assert handle_cli(before, after, db_type="psql")
     captured = capsys.readouterr()
     assert "ALTER TABLE" in captured.out
     assert not captured.err
-    assert handle_cli(before, after, db_type='psql', verbose=True)
+    assert handle_cli(before, after, db_type="psql", verbose=True)
     captured = capsys.readouterr()
     assert "ALTER TABLE" in captured.out
-    assert captured.err # due to verbose
+    assert captured.err  # due to verbose
 
     before = textwrap.dedent(
         """
@@ -163,12 +173,12 @@ def test_handle_cli(capsys):
     )
 
     # no magic -> no success
-    assert not handle_cli(before, after, db_type='psql')
+    assert not handle_cli(before, after, db_type="psql")
     captured = capsys.readouterr()
     assert "ALTER TABLE" not in captured.out
     assert captured.err
 
-    assert handle_cli(before, after, db_type='psql', magic=True)
+    assert handle_cli(before, after, db_type="psql", magic=True)
     captured = capsys.readouterr()
     assert "ALTER TABLE" in captured.out
     assert not captured.err
@@ -189,10 +199,28 @@ def test_handle_cli(capsys):
         """
     )
 
-    assert handle_cli(before, after, db_type='psql', magic=True, verbose=True)
+    assert handle_cli(before, after, db_type="psql", magic=True, verbose=False)
     captured = capsys.readouterr()
 
-    print(captured.err)
+    assert "ALTER TABLE" in captured.out
+    assert not captured.err
+
+    assert handle_cli(before, after, db_type="psql", magic=True, verbose=False, function_name="define_tables")
+    captured = capsys.readouterr()
 
     assert "ALTER TABLE" in captured.out
-    assert captured.err
+    assert not captured.err
+
+    assert not handle_cli(
+        before, after, db_type="psql", magic=True, verbose=False, function_name="define_something_else"
+    )
+    captured = capsys.readouterr()
+
+    assert not captured.out
+    assert "No tables found in the top-level or define_something_else function!" in captured.err
+
+    assert handle_cli(before, after, noop=True)
+    captured = capsys.readouterr()
+
+    assert "def define_tables" in captured.err
+    assert not captured.out

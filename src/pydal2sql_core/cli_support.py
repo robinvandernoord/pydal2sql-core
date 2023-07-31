@@ -381,6 +381,9 @@ def ensure_no_migrate_on_real_db(
 MAX_RETRIES = 20
 
 
+# todo: overload more methods
+
+
 def handle_cli(
     code_before: str,
     code_after: str,
@@ -412,41 +415,43 @@ def handle_cli(
     to_execute = string.Template(
         textwrap.dedent(
             """
-        from pydal import *
-        from pydal.objects import *
-        from pydal.validators import *
+from pydal import *
+from pydal.objects import *
+from pydal.validators import *
 
-        from pydal2sql import generate_sql
-
-        db = database = DAL(None, migrate=False)
-
-        tables = $tables
-        db_type = '$db_type'
-
-        $extra
-
-        $code_before
-
-        db_old = db
-        db_new = db = database = DAL(None, migrate=False)
-
-        $code_after
-
-        if not tables:
-            tables = set(db_old._tables + db_new._tables)
-
-        if not tables:
-            raise ValueError('no-tables-found')
+from pydal2sql import generate_sql
 
 
-        for table in tables:
-            print('--', table)
-            if table in db_old and table in db_new:
-                print(generate_sql(db_old[table], db_new[table], db_type=db_type))
-            elif table in db_old:
-                print(f'DROP TABLE {table};')
-            else:
-                print(generate_sql(db_new[table], db_type=db_type))
+from pydal import DAL
+db = database = DAL(None, migrate=False)
+
+tables = $tables
+db_type = '$db_type'
+
+$extra
+
+$code_before
+
+db_old = db
+db_new = db = database = DAL(None, migrate=False)
+
+$code_after
+
+if not tables:
+    tables = set(db_old._tables + db_new._tables)
+
+if not tables:
+    raise ValueError('no-tables-found')
+
+
+for table in tables:
+    print('--', table)
+    if table in db_old and table in db_new:
+        print(generate_sql(db_old[table], db_new[table], db_type=db_type))
+    elif table in db_old:
+        print(f'DROP TABLE {table};')
+    else:
+        print(generate_sql(db_new[table], db_type=db_type))
     """
         )
     )
@@ -468,6 +473,7 @@ def handle_cli(
 
     if not noop:
         err: typing.Optional[Exception] = None
+        catch: dict[str, typing.Any] = {}
         retry_counter = MAX_RETRIES
         while retry_counter > 0:
             retry_counter -= 1
@@ -475,12 +481,15 @@ def handle_cli(
                 if verbose:
                     rich.print(generated_code, file=sys.stderr)
 
-                exec(generated_code)  # nosec: B102
+                # 'catch' is used to add and receive globals from the exec scope.
+                # another argument could be added for locals, but adding simply {} changes the behavior negatively.
+                # so for now, only globals is passed.
+                exec(generated_code, catch)  # nosec: B102
                 return True  # success!
             except ValueError as e:
                 err = e
 
-                if str(e) != "no-tables-found":
+                if str(e) != "no-tables-found":  # pragma: no cover
                     raise e
 
                 if function_name:
@@ -488,7 +497,7 @@ def handle_cli(
 
                     # if define_tables function is found, add call to it at end of code
                     if define_tables is not None:
-                        generated_code = add_function_call(generated_code, function_name)
+                        generated_code = add_function_call(generated_code, function_name, multiple=True)
                         continue
 
                 # else: no define_tables or other method to use found.
@@ -515,13 +524,14 @@ def handle_cli(
                     )
                     return False
 
+                # postponed: this can possibly also be achieved by updating 'catch'.
                 extra_code = generate_magic_code(missing_vars)
 
                 generated_code = to_execute.substitute(
                     {
                         "tables": flatten(tables or []),
                         "db_type": db_type or "",
-                        "extra": extra_code,
+                        "extra": textwrap.dedent(extra_code),
                         "code_before": textwrap.dedent(code_before),
                         "code_after": textwrap.dedent(code_after),
                     }
