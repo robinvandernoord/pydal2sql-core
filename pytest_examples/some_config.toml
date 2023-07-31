@@ -1,0 +1,2 @@
+[tool.pydal2sql]
+magic = true
