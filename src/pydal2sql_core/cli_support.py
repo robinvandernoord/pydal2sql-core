@@ -419,7 +419,7 @@ from pydal import *
 from pydal.objects import *
 from pydal.validators import *
 
-from pydal2sql import generate_sql
+from pydal2sql_core import generate_sql
 
 
 from pydal import DAL
