@@ -78,6 +78,8 @@ def test_alter():
         Field("obj", "integer"),  # total type change
     )
 
+    assert generate_sql(old, old, db_type="psql") == "" # no change
+
     alter_statements = generate_sql(old, new, db_type="psql")
 
     assert "NOT NULL" in alter_statements

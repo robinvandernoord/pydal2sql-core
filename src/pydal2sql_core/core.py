@@ -15,9 +15,13 @@ from .types import SUPPORTED_DATABASE_TYPES, SUPPORTED_DATABASE_TYPES_WITH_ALIAS
 
 
 class DummyDAL(pydal.DAL):  # type: ignore
+    """
+    Subclass of DAL that disables committing.
+    """
+
     def commit(self) -> None:
         """
-        Do Nothing
+        Do Nothing.
         """
 
 
@@ -73,17 +77,17 @@ def generate_create_statement(
     define_table: Table, db_type: SUPPORTED_DATABASE_TYPES_WITH_ALIASES = None, *, db_folder: str = None
 ) -> str:
     """
-       Given a Table object (result of `db.define_table('mytable')` or simply db.mytable) \
-           and a db type (e.g. postgres, sqlite, mysql), generate the `CREATE TABLE` SQL for that dialect.
+    Given a Table object (result of `db.define_table('mytable')` or simply db.mytable) \
+       and a db type (e.g. postgres, sqlite, mysql), generate the `CREATE TABLE` SQL for that dialect.
 
-       If no db_type is supplied, the type is guessed from the specified table.
-           However, your db_type can differ from the current database used.
-           You can even use a dummy database to generate SQL code with:
-           `db = pydal.DAL(None, migrate=False)`
+    If no db_type is supplied, the type is guessed from the specified table.
+       However, your db_type can differ from the current database used.
+       You can even use a dummy database to generate SQL code with:
+       `db = pydal.DAL(None, migrate=False)`
 
-       db_folder is the database folder where migration (`.table`) files are stored.
-           By default, a random temporary dir is created.
-       """
+    db_folder is the database folder where migration (`.table`) files are stored.
+       By default, a random temporary dir is created.
+    """
     if not db_type:
         db_type = getattr(define_table._db, "_dbname", None)
 
@@ -106,6 +110,24 @@ def sql_fields_through_tablefile(
     db_folder: typing.Optional[str | Path] = None,
     db_type: SUPPORTED_DATABASE_TYPES_WITH_ALIASES = None,
 ) -> dict[str, typing.Any]:
+    """
+    Generate SQL fields for the given `Table` object by simulating migration via a table file.
+
+    Args:
+        define_table (Table): The `Table` object representing the table for which SQL fields are generated.
+        db_folder (str or Path, optional): The path to the database folder or directory to use. If not specified,
+            a temporary directory is used for the operation. Defaults to None.
+        db_type (str or SUPPORTED_DATABASE_TYPES_WITH_ALIASES, optional): The type of the database (e.g., "postgres",
+            "mysql", etc.). If not provided, the database type will be guessed based on the `define_table` object.
+            If the guess fails, a ValueError is raised. Defaults to None.
+
+    Returns:
+        dict[str, typing.Any]: A dictionary containing the generated SQL fields for the `Table` object. The keys
+        of the dictionary are field names, and the values are additional field information.
+
+    Raises:
+        ValueError: If the `db_type` is not provided, and it cannot be guessed from the `define_table` object.
+    """
     if not db_type:
         db_type = getattr(define_table._db, "_dbname", None)
 
@@ -135,6 +157,26 @@ def generate_alter_statement(
     *,
     db_folder: str = None,
 ) -> str:
+    """
+    Generate SQL ALTER statements to update the `define_table_old` to `define_table_new`.
+
+    Args:
+        define_table_old (Table): The `Table` object representing the old version of the table.
+        define_table_new (Table): The `Table` object representing the new version of the table.
+        db_type (str or SUPPORTED_DATABASE_TYPES_WITH_ALIASES, optional): The type of the database (e.g., "postgres",
+            "mysql", etc.). If not provided, the database type will be guessed based on the `_db` attribute of the
+            `define_table_old` and `define_table_new` objects.
+            If the guess fails, a ValueError is raised. Defaults to None.
+        db_folder (str, optional): The path to the database folder or directory to use. If not specified,
+            a temporary directory is used for the operation. Defaults to None.
+
+    Returns:
+        str: A string containing SQL ALTER statements that update the `define_table_old` to `define_table_new`.
+
+    Raises:
+        ValueError: If the `db_type` is not provided, and it cannot be guessed from the `define_table_old` and
+        `define_table_new` objects.
+    """
     if not db_type:
         db_type = getattr(define_table_old._db, "_dbname", None) or getattr(define_table_new._db, "_dbname", None)
 
@@ -189,12 +231,35 @@ def generate_alter_statement(
 
 def generate_sql(
     define_table: Table,
-    define_table_new: Table = None,
+    define_table_new: typing.Optional[Table] = None,
     /,
     db_type: SUPPORTED_DATABASE_TYPES_WITH_ALIASES = None,
     *,
     db_folder: str = None,
 ) -> str:
+    """
+    Generate SQL statements based on the provided `Table` object or a comparison of two `Table` objects.
+
+    If `define_table_new` is provided, the function generates ALTER statements to update `define_table` to
+    `define_table_new`. If `define_table_new` is not provided, the function generates CREATE statements for
+    `define_table`.
+
+    Args:
+        define_table (Table): The `Table` object representing the table to generate SQL for.
+        define_table_new (Table, optional): The `Table` object representing the new version of the table
+            (used to generate ALTER statements). Defaults to None.
+        db_type (str or SUPPORTED_DATABASE_TYPES_WITH_ALIASES, optional): The type of the database (e.g., "postgres",
+            "mysql", etc.). If not provided, the database type will be guessed based on the `_db` attribute of the
+            `define_table` object. If the guess fails, a ValueError is raised. Defaults to None.
+        db_folder (str, optional): The path to the database folder or directory to use. If not specified,
+            a temporary directory is used for the operation. Defaults to None.
+
+    Returns:
+        str: A string containing the generated SQL statements.
+
+    Raises:
+        ValueError: If the `db_type` is not provided, and it cannot be guessed from the `define_table` object.
+    """
     if define_table_new:
         return generate_alter_statement(define_table, define_table_new, db_type=db_type, db_folder=db_folder)
     else:

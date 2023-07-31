@@ -1,5 +1,6 @@
 import os
 import shutil
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ from src.pydal2sql_core.cli_support import (
     extract_file_versions_and_paths,
     find_git_root,
     get_absolute_path_info,
-    get_file_for_version,
+    get_file_for_version, ensure_no_migrate_on_real_db, handle_cli,
 )
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 from tests.mock_git import mock_git
@@ -42,6 +43,46 @@ def test_extract_file_versions_and_paths():
     assert name1 != name2
     assert version1 == "stdin"
     assert version2 == "latest"
+
+
+def test_ensure_no_migrate_on_real_db():
+    # test local import:
+
+    code = textwrap.dedent("""
+    from .common import db
+
+    database.define_tables('something_else')
+    """)
+
+    target = textwrap.dedent("""
+    database.define_tables('something_else')
+    """)
+
+    with pytest.raises(ValueError):
+        ensure_no_migrate_on_real_db(code, fix=False)
+
+    assert ensure_no_migrate_on_real_db(code, fix=True).strip() == target.strip()
+
+    # test local import AND definition:
+
+    code = textwrap.dedent("""
+    from .common import db
+    
+    database = DAL()
+    
+    db.define_tables('something')
+    database.define_tables('something_else')
+    """)
+
+    target = textwrap.dedent("""
+    db.define_tables('something')
+    database.define_tables('something_else')
+    """)
+
+    with pytest.raises(ValueError):
+        ensure_no_migrate_on_real_db(code, fix=False)
+
+    assert ensure_no_migrate_on_real_db(code, fix=True).strip() == target.strip()
 
 
 def test_git_support():
@@ -80,3 +121,78 @@ def test_git_support():
     with TempdirOrExistingDir() as cwd, chdir(cwd):
         Path("pyproject.toml").touch()
         assert find_git_root() is None
+
+
+def test_handle_cli(capsys):
+    # only `handle_cli` output is tested here,
+    # actual create/alter statements are fully tested in test_core.py.
+
+    before = textwrap.dedent(
+        """
+        db.define_table('my_table')
+        """
+    )
+
+    after = textwrap.dedent(
+        """
+        db.define_table('my_table', Field('some_string'))
+        """
+    )
+
+    assert handle_cli(before, after, db_type='psql')
+    captured = capsys.readouterr()
+    assert "ALTER TABLE" in captured.out
+    assert not captured.err
+    assert handle_cli(before, after, db_type='psql', verbose=True)
+    captured = capsys.readouterr()
+    assert "ALTER TABLE" in captured.out
+    assert captured.err # due to verbose
+
+    before = textwrap.dedent(
+        """
+        db.define_table('my_table')
+        """
+    )
+
+    after = textwrap.dedent(
+        """
+        from package import imported
+        
+        db.define_table('my_table', Field('some_string', validator=some_external_variable, default=imported))
+        """
+    )
+
+    # no magic -> no success
+    assert not handle_cli(before, after, db_type='psql')
+    captured = capsys.readouterr()
+    assert "ALTER TABLE" not in captured.out
+    assert captured.err
+
+    assert handle_cli(before, after, db_type='psql', magic=True)
+    captured = capsys.readouterr()
+    assert "ALTER TABLE" in captured.out
+    assert not captured.err
+
+    # in a function
+
+    before = textwrap.dedent(
+        """
+        def define_tables(db):
+            db.define_table('my_table')
+        """
+    )
+
+    after = textwrap.dedent(
+        """
+        def define_tables(db):
+            db.define_table('my_table', Field('some_string', validator=something))
+        """
+    )
+
+    assert handle_cli(before, after, db_type='psql', magic=True, verbose=True)
+    captured = capsys.readouterr()
+
+    print(captured.err)
+
+    assert "ALTER TABLE" in captured.out
+    assert captured.err

@@ -23,6 +23,7 @@ dependencies = [
     "pydal",
     "GitPython",
     "contextlib_chdir",
+    "witchery",
 ]
 
 [project.optional-dependencies]

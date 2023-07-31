@@ -17,24 +17,27 @@ from black.files import find_project_root
 from git.objects.blob import Blob
 from git.objects.commit import Commit
 from git.repo import Repo
-
-from .helpers import flatten
-from .magic import (
+from witchery import (
     add_function_call,
     find_defined_variables,
     find_function_to_call,
-    find_local_imports,
     find_missing_variables,
     generate_magic_code,
+    has_local_imports,
     remove_import,
     remove_local_imports,
     remove_specific_variables,
 )
 
+from .helpers import flatten
+
 
 def has_stdin_data() -> bool:  # pragma: no cover
     """
-    Check if the program starts with cli data (pipe | or redirect ><).
+    Check if the program starts with cli data (pipe | or redirect <).
+
+    Returns:
+        bool: True if the program starts with cli data, False otherwise.
 
     See Also:
         https://stackoverflow.com/questions/3762881/how-do-i-check-if-stdin-has-some-data
@@ -55,6 +58,17 @@ AnyCallable = typing.Callable[..., typing.Any]
 
 
 def print_if_interactive(*args: typing.Any, pretty: bool = True, **kwargs: typing.Any) -> None:  # pragma: no cover
+    """
+    Print the given arguments if running in an interactive session.
+
+    Args:
+        *args: Variable length list of arguments to be printed.
+        pretty (bool): If True, print using rich library's rich.print, otherwise use the built-in print function.
+        **kwargs: Optional keyword arguments to be passed to the print function.
+
+    Returns:
+        None
+    """
     is_interactive = not has_stdin_data()
     _print = typing.cast(AnyCallable, rich.print if pretty else print)  # make mypy happy
     if is_interactive:
@@ -66,6 +80,15 @@ def print_if_interactive(*args: typing.Any, pretty: bool = True, **kwargs: typin
 
 
 def find_git_root(at: str = None) -> Optional[Path]:
+    """
+    Find the root directory of the Git repository.
+
+    Args:
+        at (str, optional): The directory path to start the search. Defaults to the current working directory.
+
+    Returns:
+        Optional[Path]: The root directory of the Git repository if found, otherwise None.
+    """
     folder, reason = find_project_root((at or os.getcwd(),))
     if reason != ".git directory":
         return None
@@ -73,6 +96,16 @@ def find_git_root(at: str = None) -> Optional[Path]:
 
 
 def find_git_repo(repo: Repo = None, at: str = None) -> Repo:
+    """
+    Find the Git repository instance.
+
+    Args:
+        repo (Repo, optional): An existing Git repository instance. If provided, returns the same instance.
+        at (str, optional): The directory path to start the search. Defaults to the current working directory.
+
+    Returns:
+        Repo: The Git repository instance.
+    """
     if repo:
         return repo
 
@@ -81,26 +114,74 @@ def find_git_repo(repo: Repo = None, at: str = None) -> Repo:
 
 
 def latest_commit(repo: Repo = None) -> Commit:
+    """
+    Get the latest commit in the Git repository.
+
+    Args:
+        repo (Repo, optional): An existing Git repository instance. If provided, uses the given instance.
+
+    Returns:
+        Commit: The latest commit in the Git repository.
+    """
     repo = find_git_repo(repo)
     return repo.head.commit
 
 
 def commit_by_id(commit_hash: str, repo: Repo = None) -> Commit:
+    """
+    Get a specific commit in the Git repository by its hash or name.
+
+    Args:
+        commit_hash (str): The hash of the commit to retrieve. Can also be e.g. a branch name.
+        repo (Repo, optional): An existing Git repository instance. If provided, uses the given instance.
+
+    Returns:
+        Commit: The commit object corresponding to the given commit hash.
+    """
     repo = find_git_repo(repo)
     return repo.commit(commit_hash)
 
 
 @contextlib.contextmanager
 def open_blob(file: Blob) -> typing.Generator[io.BytesIO, None, None]:
+    """
+    Open a Git Blob object as a context manager, providing access to its data.
+
+    Args:
+        file (Blob): The Git Blob object to open.
+
+    Yields:
+        io.BytesIO: A BytesIO object providing access to the Blob data.
+    """
     yield io.BytesIO(file.data_stream.read())
 
 
 def read_blob(file: Blob) -> str:
+    """
+    Read the contents of a Git Blob object and decode it as a string.
+
+    Args:
+        file (Blob): The Git Blob object to read.
+
+    Returns:
+        str: The contents of the Blob as a string.
+    """
     with open_blob(file) as f:
         return f.read().decode()
 
 
 def get_file_for_commit(filename: str, commit_version: str = "latest", repo: Repo = None) -> str:
+    """
+    Get the contents of a file in the Git repository at a specific commit version.
+
+    Args:
+        filename (str): The path of the file to retrieve.
+        commit_version (str, optional): The commit hash or branch name. Defaults to "latest" (latest commit).
+        repo (Repo, optional): An existing Git repository instance. If provided, uses the given instance.
+
+    Returns:
+        str: The contents of the file as a string.
+    """
     repo = find_git_repo(repo, at=filename)
     commit = latest_commit(repo) if commit_version == "latest" else commit_by_id(commit_version, repo)
 
@@ -113,6 +194,17 @@ def get_file_for_commit(filename: str, commit_version: str = "latest", repo: Rep
 
 
 def get_file_for_version(filename: str, version: str, prompt_description: str = "") -> str:
+    """
+    Get the contents of a file based on the version specified.
+
+    Args:
+        filename (str): The path of the file to retrieve.
+        version (str): The version specifier, which can be "current", "stdin", or a commit hash/branch name.
+        prompt_description (str, optional): A description to display when asking for input from stdin.
+
+    Returns:
+        str: The contents of the file as a string.
+    """
     if version == "current":
         return Path(filename).read_text()
     elif version == "stdin":  # pragma: no cover
@@ -132,6 +224,14 @@ def extract_file_version_and_path(
     file_path_or_git_tag: Optional[str], default_version: str = "stdin"
 ) -> tuple[str, str | None]:
     """
+    Extract the file version and path from the given input.
+
+    Args:
+        file_path_or_git_tag (str, optional): The input string containing the file path and/or Git tag.
+        default_version (str, optional): The default version to use if no version is specified. Defaults to "stdin".
+
+    Returns:
+        tuple[str, str | None]: A tuple containing the extracted version and file path (or None if not specified).
 
     Examples:
         myfile.py (implies @current)
@@ -163,6 +263,17 @@ def extract_file_version_and_path(
 def extract_file_versions_and_paths(
     filename_before: Optional[str], filename_after: Optional[str]
 ) -> tuple[tuple[str, str | None], tuple[str, str | None]]:
+    """
+    Extract the file versions and paths based on the before and after filenames.
+
+    Args:
+        filename_before (str, optional): The path of the file before the change (or None).
+        filename_after (str, optional): The path of the file after the change (or None).
+
+    Returns:
+        tuple[tuple[str, str | None], tuple[str, str | None]]:
+            A tuple of two tuples, each containing the version and path of the before and after files.
+    """
     version_before, filepath_before = extract_file_version_and_path(
         filename_before,
         default_version="current"
@@ -182,6 +293,17 @@ def extract_file_versions_and_paths(
 
 
 def get_absolute_path_info(filename: Optional[str], version: str, git_root: Optional[Path] = None) -> tuple[bool, str]:
+    """
+    Get absolute path information for the file based on the version and Git root.
+
+    Args:
+        filename (str, optional): The path of the file to check (or None).
+        version (str): The version specifier, which can be "stdin", "current", or a commit hash/branch name.
+        git_root (Path, optional): The root directory of the Git repository. If None, it will be determined.
+
+    Returns:
+        tuple[bool, str]: A tuple containing a boolean indicating if the file exists and the absolute path to the file.
+    """
     if version == "stdin":
         return True, ""
     elif filename is None:
@@ -210,6 +332,21 @@ def get_absolute_path_info(filename: Optional[str], version: str, git_root: Opti
 def ensure_no_migrate_on_real_db(
     code: str, db_names: typing.Iterable[str] = ("db", "database"), fix: typing.Optional[bool] = False
 ) -> str:
+    """
+    Ensure that the code does not contain actual migrations on a real database.
+
+    It does this by removing definitions of 'db' and database. This can be changed by customizing `db_names`.
+    It also removes local imports to prevent irrelevant code being executed.
+
+    Args:
+        code (str): The code to check for database migrations.
+        db_names (Iterable[str], optional): Names of variables representing the database.
+            Defaults to ("db", "database").
+        fix (bool, optional): If True, removes the migration code. Defaults to False.
+
+    Returns:
+        str: The modified code with migration code removed if fix=True, otherwise the original code.
+    """
     variables = find_defined_variables(code)
 
     found_variables = set()
@@ -232,7 +369,7 @@ def ensure_no_migrate_on_real_db(
             f"{message} Please remove this or use --magic to prevent performing actual migrations on your database."
         )
 
-    if find_local_imports(code):
+    if has_local_imports(code):
         if fix:
             code = remove_local_imports(code)
         else:
@@ -255,7 +392,20 @@ def handle_cli(
     function_name: Optional[str] = "define_tables",
 ) -> bool:
     """
-    Handle user input.
+    Handle user input for generating SQL migration statements based on before and after code.
+
+    Args:
+        code_before (str): The code representing the state of the database before the change.
+        code_after (str, optional): The code representing the state of the database after the change.
+        db_type (str, optional): The type of the database (e.g., "postgres", "mysql", etc.). Defaults to None.
+        tables (list[str] or list[list[str]], optional): The list of tables to generate SQL for. Defaults to None.
+        verbose (bool, optional): If True, print the generated code. Defaults to False.
+        noop (bool, optional): If True, only print the generated code but do not execute it. Defaults to False.
+        magic (bool, optional): If True, automatically add missing variables for execution. Defaults to False.
+        function_name (str, optional): The name of the function where the tables are defined. Defaults: "define_tables".
+
+    Returns:
+        bool: True if SQL migration statements are generated and executed successfully, False otherwise.
     """
     # todo: prefix (e.g. public.)
 
@@ -322,6 +472,9 @@ def handle_cli(
         while retry_counter > 0:
             retry_counter -= 1
             try:
+                if verbose:
+                    rich.print(generated_code, file=sys.stderr)
+
                 exec(generated_code)  # nosec: B102
                 return True  # success!
             except ValueError as e:
@@ -373,9 +526,6 @@ def handle_cli(
                         "code_after": textwrap.dedent(code_after),
                     }
                 )
-
-                if verbose:
-                    rich.print(generated_code, file=sys.stderr)
             except ImportError as e:
                 err = e
                 # if we catch an ImportError, we try to remove the import and retry
