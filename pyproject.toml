@@ -1,7 +1,7 @@
 [project]
 name = "pydal2sql-core"
 dynamic = ["version"]
-description = "Convert pydal define_tables to SQL using pydal's CREATE TABLE logic. (supporting package for pydal2sql)"
+description = "CLI-agnostic pydal2sql code; Convert pydal define_tables to SQL using pydal's CREATE TABLE logic."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -23,7 +23,7 @@ dependencies = [
     "pydal",
     "GitPython",
     "contextlib_chdir",
-    "witchery",
+    "witchery >= 0.1.1",
 ]
 
 [project.optional-dependencies]
