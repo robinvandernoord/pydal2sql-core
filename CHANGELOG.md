@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.1.1 (2023-07-31)
+### Fix
+* Replaced reference to pydal2sql to pydal2sql_core ([`45cd339`](https://github.com/robinvandernoord/pydal2sql-core/commit/45cd339b56c32a928a4b0ac5eb7746c7a905be71))
+
 ## v0.1.0 (2023-07-31)
 
 ### Feature
