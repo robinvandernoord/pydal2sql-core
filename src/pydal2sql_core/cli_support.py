@@ -30,6 +30,7 @@ from witchery import (
 )
 
 from .helpers import flatten
+from .types import SUPPORTED_DATABASE_TYPES_WITH_ALIASES
 
 
 def has_stdin_data() -> bool:  # pragma: no cover
@@ -546,3 +547,137 @@ for table in tables:
             return False
 
     return True
+
+
+def core_create(
+    filename: Optional[str] = None,
+    tables: Optional[list[str]] = None,
+    db_type: Optional[SUPPORTED_DATABASE_TYPES_WITH_ALIASES] = None,
+    magic: bool = False,
+    noop: bool = False,
+    verbose: bool = False,
+    function: Optional[str] = None,
+) -> bool:
+    """
+    Generates SQL migration statements for creating one or more tables, based on the code in a given source file.
+
+    Args:
+        filename: The filename of the source file to parse. This code represents the final state of the database.
+        tables: A list of table names to generate SQL for.
+            If None, the function will attempt to process all tables found in the code.
+        db_type: The type of the database. If None, the function will attempt to infer it from the code.
+        magic: If True, automatically add missing variables for execution.
+        noop: If True, only print the generated code but do not execute it.
+        verbose: If True, print the generated code and additional debug information.
+        function: The name of the function where the tables are defined.
+            If None, the function will use 'define_tables'.
+
+    Returns:
+        bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
+            False otherwise.
+
+    Raises:
+        ValueError: If the source file cannot be found or if no tables could be found in the code.
+    """
+    git_root = find_git_root() or Path(os.getcwd())
+
+    file_version, file_path = extract_file_version_and_path(
+        filename, default_version="current" if filename else "stdin"
+    )
+    file_exists, file_absolute_path = get_absolute_path_info(file_path, file_version, git_root)
+
+    if not file_exists:
+        raise ValueError(f"Source file {filename} could not be found.")
+
+    text = get_file_for_version(file_absolute_path, file_version, prompt_description="table definition")
+
+    return handle_cli(
+        "",
+        text,
+        db_type=db_type,
+        tables=tables,
+        verbose=verbose,
+        noop=noop,
+        magic=magic,
+        function_name=function,
+    )
+
+
+def core_alter(
+    filename_before: Optional[str] = None,
+    filename_after: Optional[str] = None,
+    tables: Optional[list[str]] = None,
+    db_type: Optional[SUPPORTED_DATABASE_TYPES_WITH_ALIASES] = None,
+    magic: bool = False,
+    noop: bool = False,
+    verbose: bool = False,
+    function: Optional[str] = None,
+) -> bool:
+    """
+    Generates SQL migration statements for altering the database, based on the code in two given source files.
+
+    Args:
+        filename_before: The filename of the source file before changes.
+             This code represents the initial state of the database.
+        filename_after: The filename of the source file after changes.
+             This code represents the final state of the database.
+        tables: A list of table names to generate SQL for.
+             If None, the function will attempt to process all tables found in the code.
+        db_type: The type of the database. If None, the function will attempt to infer it from the code.
+        magic: If True, automatically add missing variables for execution.
+        noop: If True, only print the generated code but do not execute it.
+        verbose: If True, print the generated code and additional debug information.
+        function: The name of the function where the tables are defined.
+             If None, the function will use 'define_tables'.
+
+    Returns:
+        bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
+             False otherwise.
+
+    Raises:
+        ValueError: If either of the source files cannot be found, if no tables could be found in the code,
+             or if the codes before and after are identical.
+    """
+    git_root = find_git_root() or Path(os.getcwd())
+
+    before, after = extract_file_versions_and_paths(filename_before, filename_after)
+
+    version_before, filename_before = before
+    version_after, filename_after = after
+
+    # either ./file exists or /file exists (seen from git root):
+
+    before_exists, before_absolute_path = get_absolute_path_info(filename_before, version_before, git_root)
+    after_exists, after_absolute_path = get_absolute_path_info(filename_after, version_after, git_root)
+
+    if not (before_exists and after_exists):
+        message = ""
+        message += "" if before_exists else f"Path {filename_before} does not exist! "
+        if filename_before != filename_after:
+            message += "" if after_exists else f"Path {filename_after} does not exist!"
+        raise ValueError(message)
+
+    code_before = get_file_for_version(
+        before_absolute_path, version_before, prompt_description="current table definition"
+    )
+    code_after = get_file_for_version(after_absolute_path, version_after, prompt_description="desired table definition")
+
+    if not (code_before and code_after):
+        message = ""
+        message += "" if code_before else "Before code is empty (Maybe try `pydal2sql create`)! "
+        message += "" if code_after else "After code is empty! "
+        raise ValueError(message)
+
+    if code_before == code_after:
+        raise ValueError("Both contain the same code!")
+
+    return handle_cli(
+        code_before,
+        code_after,
+        db_type=db_type,
+        tables=tables,
+        verbose=verbose,
+        noop=noop,
+        magic=magic,
+        function_name=function,
+    )
