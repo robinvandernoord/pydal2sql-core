@@ -29,14 +29,24 @@ def test_create():
         # db type can't be guessed if the db connection string is None and db_type is also None:
         generate_sql(db.person, db_type=None)
 
+    id_keys = {
+        "psycopg2": "id SERIAL PRIMARY KEY",
+        "sqlite3": "id INTEGER PRIMARY KEY AUTOINCREMENT",
+        "pymysql": "id INT AUTO_INCREMENT",
+    }
+
     for database_type in SUPPORTED_DATABASE_TYPES:
         generated[database_type] = sql = generate_sql(db.person, db_type=database_type)
 
         assert sql
 
-        assert "id INTEGER PRIMARY KEY AUTOINCREMENT" in sql
-        assert "name VARCHAR(512)" in sql
-        assert "nicknames TEXT" in sql
+        assert id_keys[database_type] in sql
+        assert "name" in sql
+        assert "CHAR" in sql
+
+        text_type = "LONGTEXT" if database_type == "pymysql" else "TEXT"
+
+        assert f"nicknames {text_type}" in sql
         assert "age INTEGER" in sql
 
     # sqlite

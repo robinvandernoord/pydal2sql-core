@@ -5,24 +5,18 @@ import pickle  # nosec: B403
 import typing
 from pathlib import Path
 
-import pydal
-from pydal.adapters import MySQL, Postgre, SQLAdapter, SQLite
+from pydal.adapters import MySQL, Postgre, SQLite
+from pydal.dialects import Dialect, MySQLDialect, PostgreDialect, SQLiteDialect
 from pydal.migrator import Migrator
 from pydal.objects import Table
 
 from .helpers import TempdirOrExistingDir, get_typing_args
-from .types import SUPPORTED_DATABASE_TYPES, SUPPORTED_DATABASE_TYPES_WITH_ALIASES
-
-
-class DummyDAL(pydal.DAL):  # type: ignore
-    """
-    Subclass of DAL that disables committing.
-    """
-
-    def commit(self) -> None:
-        """
-        Do Nothing.
-        """
+from .types import (
+    SUPPORTED_DATABASE_TYPES,
+    SUPPORTED_DATABASE_TYPES_WITH_ALIASES,
+    DummyDAL,
+    SQLAdapter,
+)
 
 
 def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /, db_folder: str) -> Migrator:
@@ -54,22 +48,33 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
         "pymysql": MySQL,
     }
 
-    adapter = adapters_per_database[driver_name]
+    dialects_per_database: dict[str, typing.Type[Dialect]] = {
+        "psycopg2": PostgreDialect,
+        "sqlite3": SQLiteDialect,
+        "pymysql": MySQLDialect,
+    }
+
+    adapter_cls = adapters_per_database[driver_name]
 
     installed_driver = db._drivers_available.get(driver_name)
 
     if not installed_driver:  # pragma: no cover
         raise ValueError(f"Please install the correct driver for database type {driver_name}")
 
-    class DummyAdaptor(SQLAdapter):  # type: ignore
-        types = adapter.types
+    sql_dialect = dialects_per_database[driver_name]
+
+    class DummyAdaptor(SQLAdapter):
+        types = adapter_cls.types
         driver = installed_driver
-        dbengine = adapter.dbengine
+        dbengine = adapter_cls.dbengine
 
         commit_on_alter_table = True
 
     adapter = DummyAdaptor(db, "", adapter_args={"driver": installed_driver})
+
+    adapter.dialect = sql_dialect(adapter)
     db._adapter = adapter
+
     return Migrator(adapter)
 
 
@@ -99,7 +104,7 @@ def generate_create_statement(
 
         sql: str = migrator.create_table(
             define_table,
-            migrate=True,
+            migrate=False,
             fake_migrate=True,
         )
         return sql

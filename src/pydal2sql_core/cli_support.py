@@ -531,7 +531,6 @@ def handle_cli(
                 # another argument could be added for locals, but adding simply {} changes the behavior negatively.
                 # so for now, only globals is passed.
                 exec(generated_code, catch)  # nosec: B102
-
                 return True  # success!
             except ValueError as e:
                 err = e
