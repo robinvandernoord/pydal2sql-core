@@ -381,41 +381,9 @@ def ensure_no_migrate_on_real_db(
 
 MAX_RETRIES = 20
 
-
 # todo: overload more methods
 
-
-def handle_cli(
-    code_before: str,
-    code_after: str,
-    db_type: Optional[str] = None,
-    tables: Optional[list[str] | list[list[str]]] = None,
-    verbose: Optional[bool] = False,
-    noop: Optional[bool] = False,
-    magic: Optional[bool] = False,
-    function_name: Optional[str] = "define_tables",
-) -> bool:
-    """
-    Handle user input for generating SQL migration statements based on before and after code.
-
-    Args:
-        code_before (str): The code representing the state of the database before the change.
-        code_after (str, optional): The code representing the state of the database after the change.
-        db_type (str, optional): The type of the database (e.g., "postgres", "mysql", etc.). Defaults to None.
-        tables (list[str] or list[list[str]], optional): The list of tables to generate SQL for. Defaults to None.
-        verbose (bool, optional): If True, print the generated code. Defaults to False.
-        noop (bool, optional): If True, only print the generated code but do not execute it. Defaults to False.
-        magic (bool, optional): If True, automatically add missing variables for execution. Defaults to False.
-        function_name (str, optional): The name of the function where the tables are defined. Defaults: "define_tables".
-
-    Returns:
-        bool: True if SQL migration statements are generated and executed successfully, False otherwise.
-    """
-    # todo: prefix (e.g. public.)
-
-    to_execute = string.Template(
-        textwrap.dedent(
-            """
+TEMPLATE_PYDAL = """
 from pydal import *
 from pydal.objects import *
 from pydal.validators import *
@@ -454,8 +422,85 @@ for table in tables:
     else:
         print(generate_sql(db_new[table], db_type=db_type))
     """
-        )
-    )
+
+TEMPLATE_TYPEDAL = """
+from pydal import *
+from pydal.objects import *
+from pydal.validators import *
+from typedal import *
+
+from pydal2sql_core import generate_sql
+
+
+from typedal import TypeDAL as DAL
+db = database = DAL(None, migrate=False)
+
+tables = $tables
+db_type = '$db_type'
+
+$extra
+
+$code_before
+
+db_old = db
+db_new = db = database = DAL(None, migrate=False)
+
+$code_after
+
+if not tables:
+    tables = set(db_old._tables + db_new._tables) - {"typedal_cache", "typedal_cache_dependency"}
+
+if not tables:
+    raise ValueError('no-tables-found')
+
+
+for table in tables:
+    print('--', table)
+    if table in db_old and table in db_new:
+        print(generate_sql(db_old[table], db_new[table], db_type=db_type))
+    elif table in db_old:
+        print(f'DROP TABLE {table};')
+    else:
+        print(generate_sql(db_new[table], db_type=db_type))
+    """
+
+
+def handle_cli(
+    code_before: str,
+    code_after: str,
+    db_type: Optional[str] = None,
+    tables: Optional[list[str] | list[list[str]]] = None,
+    verbose: Optional[bool] = False,
+    noop: Optional[bool] = False,
+    magic: Optional[bool] = False,
+    function_name: Optional[str] = "define_tables",
+    use_typedal: bool | typing.Literal["auto"] = "auto",
+) -> bool:
+    """
+    Handle user input for generating SQL migration statements based on before and after code.
+
+    Args:
+        code_before (str): The code representing the state of the database before the change.
+        code_after (str, optional): The code representing the state of the database after the change.
+        db_type (str, optional): The type of the database (e.g., "postgres", "mysql", etc.). Defaults to None.
+        tables (list[str] or list[list[str]], optional): The list of tables to generate SQL for. Defaults to None.
+        verbose (bool, optional): If True, print the generated code. Defaults to False.
+        noop (bool, optional): If True, only print the generated code but do not execute it. Defaults to False.
+        magic (bool, optional): If True, automatically add missing variables for execution. Defaults to False.
+        function_name (str, optional): The name of the function where the tables are defined. Defaults: "define_tables".
+
+    # todo: prefix (e.g. public.)
+
+    Returns:
+        bool: True if SQL migration statements are generated and executed successfully, False otherwise.
+    """
+    # todo: better typedal checking
+    if use_typedal == "auto":
+        use_typedal = "typedal" in code_before.lower() or "typedal" in code_after.lower()
+
+    template = TEMPLATE_TYPEDAL if use_typedal else TEMPLATE_PYDAL
+
+    to_execute = string.Template(textwrap.dedent(template))
 
     code_before = ensure_no_migrate_on_real_db(code_before, fix=magic)
     code_after = ensure_no_migrate_on_real_db(code_after, fix=magic)
@@ -486,6 +531,7 @@ for table in tables:
                 # another argument could be added for locals, but adding simply {} changes the behavior negatively.
                 # so for now, only globals is passed.
                 exec(generated_code, catch)  # nosec: B102
+
                 return True  # success!
             except ValueError as e:
                 err = e
