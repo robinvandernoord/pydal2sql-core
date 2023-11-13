@@ -2,7 +2,7 @@ import pydal
 import pytest
 from pydal import DAL, Field
 
-from src.pydal2sql_core import SUPPORTED_DATABASE_TYPES, generate_sql
+from src.pydal2sql_core import SUPPORTED_DATABASE_TYPES, generate_sql, core_create, core_alter
 from src.pydal2sql_core.core import _build_dummy_migrator, sql_fields_through_tablefile
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 
@@ -57,6 +57,9 @@ def test_create():
 
     # mysql
     assert "ENGINE=InnoDB CHARACTER SET utf8" in generated["pymysql"]
+
+    ### todo:
+    core_create
 
 
 def test_alter():
@@ -120,6 +123,9 @@ def test_alter():
     assert generate_sql(before, after)
 
     assert sql_fields_through_tablefile(after)
+
+    ### todo:
+    core_alter
 
 
 def test_invalid_dbtype():

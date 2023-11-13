@@ -4,11 +4,13 @@ CLI-Agnostic support.
 import contextlib
 import io
 import os
+import re
 import select
 import string
 import sys
 import textwrap
 import typing
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -30,7 +32,11 @@ from witchery import (
 )
 
 from .helpers import flatten
-from .types import SUPPORTED_DATABASE_TYPES_WITH_ALIASES
+from .types import (
+    DEFAULT_OUTPUT_FORMAT,
+    SUPPORTED_DATABASE_TYPES_WITH_ALIASES,
+    SUPPORTED_OUTPUT_FORMATS,
+)
 
 
 def has_stdin_data() -> bool:  # pragma: no cover
@@ -414,13 +420,13 @@ if not tables:
 
 
 for table in tables:
-    print('--', table)
+    print('--', table, file=_file)
     if table in db_old and table in db_new:
-        print(generate_sql(db_old[table], db_new[table], db_type=db_type))
+        print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
     elif table in db_old:
-        print(f'DROP TABLE {table};')
+        print(f'DROP TABLE {table};', file=_file)
     else:
-        print(generate_sql(db_new[table], db_type=db_type))
+        print(generate_sql(db_new[table], db_type=db_type), file=_file)
     """
 
 TEMPLATE_TYPEDAL = """
@@ -455,14 +461,96 @@ if not tables:
 
 
 for table in tables:
-    print('--', table)
+    print('--', table, file=_file)
     if table in db_old and table in db_new:
-        print(generate_sql(db_old[table], db_new[table], db_type=db_type))
+        print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
     elif table in db_old:
-        print(f'DROP TABLE {table};')
+        print(f'DROP TABLE {table};', file=_file)
     else:
-        print(generate_sql(db_new[table], db_type=db_type))
+        print(generate_sql(db_new[table], db_type=db_type), file=_file)
     """
+
+
+def sql_to_function_name(sql_statement: str) -> str:
+    """
+    Extract action (CREATE, ALTER, DROP) and table name from the SQL statement.
+    """
+    match = re.findall(r"(CREATE|ALTER|DROP)\s+TABLE\s+(\w+)", sql_statement.lower(), re.IGNORECASE)
+
+    if not match:
+        # raise ValueError("Invalid SQL statement. Unable to extract action and table name.")
+        return "unknown_migration"
+
+    action, table_name = match[0]
+
+    # Generate a function name with the specified format
+    return f"{action}_{table_name}"
+
+
+def _setup_generic_edwh_migrate(file: Path, is_typedal: bool) -> None:
+    contents = (
+        "from edwh_migrate import migration\n"
+        + ("from typedal import TypeDAL" if is_typedal else "from pydal import DAL")
+        + "\n"
+    )
+
+    with file.open("w") as f:
+        f.write(textwrap.dedent(contents))
+
+    rich.print(f"[green] New migrate file {file} created [/green]")
+
+
+def _handle_output(
+    file: io.StringIO,
+    output_file: Path | str | io.StringIO | None,
+    output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
+    is_typedal: bool = False,
+) -> None:
+    file.seek(0)
+    contents = file.read()
+
+    if output_format == "edwh-migrate":
+        cls = "TypeDAL" if is_typedal else "DAL"
+
+        func_name = sql_to_function_name(contents)
+        date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
+        func_name = f"{func_name}_{date}_001"
+
+        contents = textwrap.indent(contents, " " * 8)
+        contents = f'''
+
+@migration
+def {func_name}(db: {cls}):
+    db.executesql("""
+{contents}
+    );
+    """)
+    db.commit()
+
+    return True
+
+'''
+    else:
+        # default, None
+        func_name = ""
+
+    if isinstance(output_file, str):
+        output_file = Path(output_file)
+
+    if isinstance(output_file, Path):
+        if output_format == "edwh-migrate" and (not output_file.exists() or output_file.stat().st_size == 0):
+            _setup_generic_edwh_migrate(output_file, is_typedal)
+
+        with output_file.open("a") as f:
+            f.write(contents)
+
+        rich.print(f"[green] Written migration {func_name} to {output_file} [/green]")
+
+    elif isinstance(output_file, io.StringIO):
+        output_file.write(contents)
+    else:
+        # no file, just print to stdout:
+        print(contents)
 
 
 def handle_cli(
@@ -475,6 +563,8 @@ def handle_cli(
     magic: Optional[bool] = False,
     function_name: Optional[str] = "define_tables",
     use_typedal: bool | typing.Literal["auto"] = "auto",
+    output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
+    output_file: Optional[str | Path | io.StringIO] = None,
 ) -> bool:
     """
     Handle user input for generating SQL migration statements based on before and after code.
@@ -488,6 +578,9 @@ def handle_cli(
         noop (bool, optional): If True, only print the generated code but do not execute it. Defaults to False.
         magic (bool, optional): If True, automatically add missing variables for execution. Defaults to False.
         function_name (str, optional): The name of the function where the tables are defined. Defaults: "define_tables".
+        use_typedal: replace pydal imports with TypeDAL?
+        output_format: defaults to just SQL, edwh-migrate migration syntax also supported
+        output_file: append the output to a file instead of printing it?
 
     # todo: prefix (e.g. public.)
 
@@ -517,81 +610,89 @@ def handle_cli(
     if verbose or noop:
         rich.print(generated_code, file=sys.stderr)
 
-    if not noop:
-        err: typing.Optional[Exception] = None
-        catch: dict[str, typing.Any] = {}
-        retry_counter = MAX_RETRIES
-        while retry_counter > 0:
-            retry_counter -= 1
-            try:
-                if verbose:
-                    rich.print(generated_code, file=sys.stderr)
+    if noop:
+        # done
+        return True
 
-                # 'catch' is used to add and receive globals from the exec scope.
-                # another argument could be added for locals, but adding simply {} changes the behavior negatively.
-                # so for now, only globals is passed.
-                exec(generated_code, catch)  # nosec: B102
-                return True  # success!
-            except ValueError as e:
-                err = e
+    err: typing.Optional[Exception] = None
+    catch: dict[str, typing.Any] = {}
+    retry_counter = MAX_RETRIES
 
-                if str(e) != "no-tables-found":  # pragma: no cover
-                    raise e
+    while retry_counter:
+        retry_counter -= 1
+        try:
+            if verbose:
+                rich.print(generated_code, file=sys.stderr)
 
-                if function_name:
-                    define_tables = find_function_to_call(generated_code, function_name)
+            # 'catch' is used to add and receive globals from the exec scope.
+            # another argument could be added for locals, but adding simply {} changes the behavior negatively.
+            # so for now, only globals is passed.
+            catch["_file"] = io.StringIO()  # <- every print should go to this file, so we can handle it afterwards
+            exec(generated_code, catch)  # nosec: B102
+            _handle_output(catch["_file"], output_file, output_format, is_typedal=use_typedal)
+            return True  # success!
+        except ValueError as e:
+            err = e
 
-                    # if define_tables function is found, add call to it at end of code
-                    if define_tables is not None:
-                        generated_code = add_function_call(generated_code, function_name, multiple=True)
-                        continue
+            if str(e) != "no-tables-found":  # pragma: no cover
+                raise e
 
-                # else: no define_tables or other method to use found.
+            if function_name:
+                define_tables = find_function_to_call(generated_code, function_name)
 
-                print(f"No tables found in the top-level or {function_name} function!", file=sys.stderr)
-                print(
-                    "Please use `db.define_table` or `database.define_table`, "
-                    "or if you really need to use an alias like my_db.define_tables, "
-                    "add `my_db = db` at the top of the file or pass `--db-name mydb`.",
+                # if define_tables function is found, add call to it at end of code
+                if define_tables is not None:
+                    generated_code = add_function_call(generated_code, function_name, multiple=True)
+                    continue
+
+            # else: no define_tables or other method to use found.
+
+            print(f"No tables found in the top-level or {function_name} function!", file=sys.stderr)
+            print(
+                "Please use `db.define_table` or `database.define_table`, "
+                "or if you really need to use an alias like my_db.define_tables, "
+                "add `my_db = db` at the top of the file or pass `--db-name mydb`.",
+                file=sys.stderr,
+            )
+            print(f"You can also specify a --function to use something else than {function_name}.", file=sys.stderr)
+
+            return False
+
+        except NameError as e:
+            err = e
+            # something is missing!
+            missing_vars = find_missing_variables(generated_code) - {"_file"}  # _file is special and inserted later!
+            if not magic:
+                rich.print(
+                    f"Your code is missing some variables: {missing_vars}. Add these or try --magic",
                     file=sys.stderr,
                 )
-                print(f"You can also specify a --function to use something else than {function_name}.", file=sys.stderr)
-
                 return False
 
-            except NameError as e:
-                err = e
-                # something is missing!
-                missing_vars = find_missing_variables(generated_code)
-                if not magic:
-                    rich.print(
-                        f"Your code is missing some variables: {missing_vars}. Add these or try --magic",
-                        file=sys.stderr,
-                    )
-                    return False
+            # postponed: this can possibly also be achieved by updating the 'catch' dict
+            #   instead of injecting in the string.
+            extra_code = generate_magic_code(missing_vars)
 
-                # postponed: this can possibly also be achieved by updating 'catch'.
-                extra_code = generate_magic_code(missing_vars)
-
-                generated_code = to_execute.substitute(
-                    {
-                        "tables": flatten(tables or []),
-                        "db_type": db_type or "",
-                        "extra": textwrap.dedent(extra_code),
-                        "code_before": textwrap.dedent(code_before),
-                        "code_after": textwrap.dedent(code_after),
-                    }
-                )
-            except ImportError as e:
-                err = e
-                # if we catch an ImportError, we try to remove the import and retry
-                generated_code = remove_import(generated_code, e.name)
+            generated_code = to_execute.substitute(
+                {
+                    "tables": flatten(tables or []),
+                    "db_type": db_type or "",
+                    "extra": textwrap.dedent(extra_code),
+                    "code_before": textwrap.dedent(code_before),
+                    "code_after": textwrap.dedent(code_after),
+                }
+            )
+        except ImportError as e:
+            err = e
+            # if we catch an ImportError, we try to remove the import and retry
+            generated_code = remove_import(generated_code, e.name)
 
         if retry_counter < 1:  # pragma: no cover
             rich.print(f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'}", file=sys.stderr)
             return False
 
-    return True
+    # idk when this would happen, but something definitely went wrong here:
+    return False  # pragma: no cover
 
 
 def core_create(
@@ -602,6 +703,8 @@ def core_create(
     noop: bool = False,
     verbose: bool = False,
     function: Optional[str] = None,
+    output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
+    output_file: Optional[str | Path] = None,
 ) -> bool:
     """
     Generates SQL migration statements for creating one or more tables, based on the code in a given source file.
@@ -616,6 +719,8 @@ def core_create(
         verbose: If True, print the generated code and additional debug information.
         function: The name of the function where the tables are defined.
             If None, the function will use 'define_tables'.
+        output_format: defaults to just SQL, edwh-migrate migration syntax also supported
+        output_file: append the output to a file instead of printing it?
 
     Returns:
         bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
@@ -625,6 +730,10 @@ def core_create(
         ValueError: If the source file cannot be found or if no tables could be found in the code.
     """
     git_root = find_git_root() or Path(os.getcwd())
+
+    if filename and ":" in filename:
+        # e.g. models.py:define_tables
+        filename, function = filename.split(":", 1)
 
     file_version, file_path = extract_file_version_and_path(
         filename, default_version="current" if filename else "stdin"
@@ -645,6 +754,8 @@ def core_create(
         noop=noop,
         magic=magic,
         function_name=function,
+        output_format=output_format,
+        output_file=output_file,
     )
 
 
@@ -657,6 +768,8 @@ def core_alter(
     noop: bool = False,
     verbose: bool = False,
     function: Optional[str] = None,
+    output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
+    output_file: Optional[str | Path] = None,
 ) -> bool:
     """
     Generates SQL migration statements for altering the database, based on the code in two given source files.
@@ -674,6 +787,8 @@ def core_alter(
         verbose: If True, print the generated code and additional debug information.
         function: The name of the function where the tables are defined.
              If None, the function will use 'define_tables'.
+        output_format: defaults to just SQL, edwh-migrate migration syntax also supported
+        output_file: append the output to a file instead of printing it?
 
     Returns:
         bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
@@ -684,6 +799,14 @@ def core_alter(
              or if the codes before and after are identical.
     """
     git_root = find_git_root() or Path(os.getcwd())
+
+    if filename_before and ":" in filename_before:
+        # e.g. models.py:define_tables
+        filename_before, function = filename_before.split(":", 1)
+
+    if filename_after and ":" in filename_after:
+        # e.g. models.py:define_tables
+        filename_after, function = filename_after.split(":", 1)
 
     before, after = extract_file_versions_and_paths(filename_before, filename_after)
 
@@ -702,19 +825,36 @@ def core_alter(
             message += "" if after_exists else f"Path {filename_after} does not exist!"
         raise ValueError(message)
 
-    code_before = get_file_for_version(
-        before_absolute_path, version_before, prompt_description="current table definition"
-    )
-    code_after = get_file_for_version(after_absolute_path, version_after, prompt_description="desired table definition")
+    try:
+        code_before = get_file_for_version(
+            before_absolute_path, version_before, prompt_description="current table definition"
+        )
+        code_after = get_file_for_version(
+            after_absolute_path, version_after, prompt_description="desired table definition"
+        )
 
-    if not (code_before and code_after):
-        message = ""
-        message += "" if code_before else "Before code is empty (Maybe try `pydal2sql create`)! "
-        message += "" if code_after else "After code is empty! "
-        raise ValueError(message)
+        if not (code_before and code_after):
+            message = ""
+            message += "" if code_before else "Before code is empty (Maybe try `pydal2sql create`)! "
+            message += "" if code_after else "After code is empty! "
+            raise ValueError(message)
 
-    if code_before == code_after:
-        raise ValueError("Both contain the same code!")
+        if code_before == code_after:
+            raise ValueError("Both contain the same code!")
+
+    except ValueError:
+        rich.print("[yellow] alter failed, trying create! [/yellow]", file=sys.stderr)
+        return core_create(
+            filename_after or filename_before,
+            tables,
+            db_type,
+            magic,
+            noop,
+            verbose,
+            function,
+            output_format,
+            output_file,
+        )
 
     return handle_cli(
         code_before,
@@ -725,4 +865,6 @@ def core_alter(
         noop=noop,
         magic=magic,
         function_name=function,
+        output_format=output_format,
+        output_file=output_file,
     )

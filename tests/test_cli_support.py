@@ -1,5 +1,7 @@
+import io
 import os
 import shutil
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -12,7 +14,7 @@ from src.pydal2sql_core.cli_support import (
     find_git_root,
     get_absolute_path_info,
     get_file_for_version,
-    handle_cli,
+    handle_cli, _handle_output,
 )
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 from tests.mock_git import mock_git
@@ -224,3 +226,42 @@ def test_handle_cli(capsys):
 
     assert "def define_tables" in captured.err
     assert not captured.out
+
+
+def test_handle_output():
+    output = io.StringIO("""
+    CREATE TABLE users (...);
+    """
+                         )
+    with tempfile.NamedTemporaryFile() as f:
+        # example 1:
+        # - Path
+        # - default
+        # - pydal
+        path = Path(f.name)
+        _handle_output(output, path, output_format="default", is_typedal=False)
+
+        with path.open() as f:
+            written_data = f.read()
+
+            # no imports or function because output format is default:
+            assert "from pydal import DAL" not in written_data
+            assert "from typedal import TypeDAL" not in written_data
+            assert "create_users" not in written_data
+
+            assert "CREATE TABLE users" in written_data
+
+    with tempfile.NamedTemporaryFile() as f:
+        # example 2:
+        # - str
+        # - edwh-migrate
+        # - typedal
+        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+
+        with open(f.name) as _f:
+            written_data = _f.read()
+
+            assert "from pydal import DAL" not in written_data
+            assert "from typedal import TypeDAL" in written_data
+            assert "create_users" in written_data
+            assert "CREATE TABLE users" in written_data
