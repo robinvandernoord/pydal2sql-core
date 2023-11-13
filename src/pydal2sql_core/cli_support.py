@@ -842,19 +842,22 @@ def core_alter(
         if code_before == code_after:
             raise ValueError("Both contain the same code!")
 
-    except ValueError:
-        rich.print("[yellow] alter failed, trying create! [/yellow]", file=sys.stderr)
-        return core_create(
-            filename_after or filename_before,
-            tables,
-            db_type,
-            magic,
-            noop,
-            verbose,
-            function,
-            output_format,
-            output_file,
-        )
+    except ValueError as e:
+        rich.print(f"[yellow] alter failed ({e}), trying create! [/yellow]", file=sys.stderr)
+        try:
+            return core_create(
+                filename_after or filename_before,
+                tables,
+                db_type,
+                magic,
+                noop,
+                verbose,
+                function,
+                output_format,
+                output_file,
+            )
+        except Exception:
+            return False
 
     return handle_cli(
         code_before,
