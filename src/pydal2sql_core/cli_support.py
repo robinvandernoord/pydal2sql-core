@@ -516,6 +516,8 @@ def _handle_output(
         date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
         func_name = f"{func_name}_{date}_001"
 
+        # fixme: on `create` and `drop`, if `func_name` already exists - stop
+        #        on `alter`, set a new order number (-> 002)
         contents = textwrap.indent(contents, " " * 8)
         contents = f'''
 
