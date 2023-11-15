@@ -12,7 +12,7 @@ import textwrap
 import typing
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import rich
 from black.files import find_project_root
@@ -36,6 +36,7 @@ from .types import (
     DEFAULT_OUTPUT_FORMAT,
     SUPPORTED_DATABASE_TYPES_WITH_ALIASES,
     SUPPORTED_OUTPUT_FORMATS,
+    DummyDAL,
 )
 
 
@@ -61,10 +62,10 @@ def has_stdin_data() -> bool:  # pragma: no cover
     )
 
 
-AnyCallable = typing.Callable[..., typing.Any]
+AnyCallable = typing.Callable[..., Any]
 
 
-def print_if_interactive(*args: typing.Any, pretty: bool = True, **kwargs: typing.Any) -> None:  # pragma: no cover
+def print_if_interactive(*args: Any, pretty: bool = True, **kwargs: Any) -> None:  # pragma: no cover
     """
     Print the given arguments if running in an interactive session.
 
@@ -397,8 +398,8 @@ from pydal.validators import *
 from pydal2sql_core import generate_sql
 
 
-from pydal import DAL
-db = database = DAL(None, migrate=False)
+# from pydal import DAL
+db = database = DummyDAL(None, migrate=False)
 
 tables = $tables
 db_type = '$db_type'
@@ -408,7 +409,7 @@ $extra
 $code_before
 
 db_old = db
-db_new = db = database = DAL(None, migrate=False)
+db_new = db = database = DummyDAL(None, migrate=False)
 
 $code_after
 
@@ -417,7 +418,6 @@ if not tables:
 
 if not tables:
     raise ValueError('no-tables-found')
-
 
 for table in tables:
     print('-- start ', table, '--', file=_file)
@@ -439,8 +439,8 @@ from typedal import *
 from pydal2sql_core import generate_sql
 
 
-from typedal import TypeDAL as DAL
-db = database = DAL(None, migrate=False)
+# from typedal import TypeDAL as DAL
+db = database = DummyDAL(None, migrate=False)
 
 tables = $tables
 db_type = '$db_type'
@@ -450,7 +450,7 @@ $extra
 $code_before
 
 db_old = db
-db_new = db = database = DAL(None, migrate=False)
+db_new = db = database = DummyDAL(None, migrate=False)
 
 $code_after
 
@@ -478,7 +478,7 @@ def sql_to_function_name(sql_statement: str) -> str:
     """
     Extract action (CREATE, ALTER, DROP) and table name from the SQL statement.
     """
-    match = re.findall(r"(CREATE|ALTER|DROP)\s+TABLE\s+(\w+)", sql_statement.lower(), re.IGNORECASE)
+    match = re.findall(r"(CREATE|ALTER|DROP)\s+TABLE\s+['\"]?(\w+)['\"]?", sql_statement.lower(), re.IGNORECASE)
 
     if not match:
         # raise ValueError("Invalid SQL statement. Unable to extract action and table name.")
@@ -632,9 +632,10 @@ def handle_cli(
         return True
 
     err: typing.Optional[Exception] = None
-    catch: dict[str, typing.Any] = {}
+    catch: dict[str, Any] = {}
     retry_counter = MAX_RETRIES
 
+    magic_vars = {"_file", "DummyDAL"}
     while retry_counter:
         retry_counter -= 1
         try:
@@ -645,7 +646,11 @@ def handle_cli(
             # another argument could be added for locals, but adding simply {} changes the behavior negatively.
             # so for now, only globals is passed.
             catch["_file"] = io.StringIO()  # <- every print should go to this file, so we can handle it afterwards
+            catch["DummyDAL"] = DummyDAL  # <- use a fake DAL that doesn't actually run queries
+            # note: when adding something to 'catch', also add it to magic_vars!!!
+
             exec(generated_code, catch)  # nosec: B102
+            print("post exec")  # fixme: remove
             _handle_output(catch["_file"], output_file, output_format, is_typedal=use_typedal)
             return True  # success!
         except ValueError as e:
@@ -678,7 +683,7 @@ def handle_cli(
         except NameError as e:
             err = e
             # something is missing!
-            missing_vars = find_missing_variables(generated_code) - {"_file"}  # _file is special and inserted later!
+            missing_vars = find_missing_variables(generated_code) - magic_vars
             if not magic:
                 rich.print(
                     f"Your code is missing some variables: {missing_vars}. Add these or try --magic",
@@ -700,6 +705,7 @@ def handle_cli(
                 }
             )
         except ImportError as e:
+            # should include ModuleNotFoundError
             err = e
             # if we catch an ImportError, we try to remove the import and retry
             generated_code = remove_import(generated_code, e.name)

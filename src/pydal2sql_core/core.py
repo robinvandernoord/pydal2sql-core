@@ -4,6 +4,7 @@ Main functionality.
 import pickle  # nosec: B403
 import typing
 from pathlib import Path
+from typing import Any
 
 from pydal.adapters import MySQL, Postgre, SQLite
 from pydal.dialects import Dialect, MySQLDialect, PostgreDialect, SQLiteDialect
@@ -14,6 +15,7 @@ from .helpers import TempdirOrExistingDir, get_typing_args
 from .types import (
     SUPPORTED_DATABASE_TYPES,
     SUPPORTED_DATABASE_TYPES_WITH_ALIASES,
+    CustomAdapter,
     DummyDAL,
     SQLAdapter,
 )
@@ -63,14 +65,14 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
 
     sql_dialect = dialects_per_database[driver_name]
 
-    class DummyAdaptor(SQLAdapter):
+    class DummyAdapter(CustomAdapter):
         types = adapter_cls.types
         driver = installed_driver
         dbengine = adapter_cls.dbengine
 
         commit_on_alter_table = True
 
-    adapter = DummyAdaptor(db, "", adapter_args={"driver": installed_driver})
+    adapter = DummyAdapter(db, "", adapter_args={"driver": installed_driver})
 
     adapter.dialect = sql_dialect(adapter)
     db._adapter = adapter
@@ -107,6 +109,7 @@ def generate_create_statement(
             migrate=False,
             fake_migrate=True,
         )
+
         return sql
 
 
@@ -114,7 +117,7 @@ def sql_fields_through_tablefile(
     define_table: Table,
     db_folder: typing.Optional[str | Path] = None,
     db_type: SUPPORTED_DATABASE_TYPES_WITH_ALIASES = None,
-) -> dict[str, typing.Any]:
+) -> dict[str, Any]:
     """
     Generate SQL fields for the given `Table` object by simulating migration via a table file.
 
@@ -127,7 +130,7 @@ def sql_fields_through_tablefile(
             If the guess fails, a ValueError is raised. Defaults to None.
 
     Returns:
-        dict[str, typing.Any]: A dictionary containing the generated SQL fields for the `Table` object. The keys
+        dict[str, Any]: A dictionary containing the generated SQL fields for the `Table` object. The keys
         of the dictionary are field names, and the values are additional field information.
 
     Raises:
@@ -151,7 +154,7 @@ def sql_fields_through_tablefile(
         with (Path(db_folder) / define_table._dbt).open("rb") as tfile:
             loaded_tables = pickle.load(tfile)  # nosec B301
 
-    return typing.cast(dict[str, typing.Any], loaded_tables)
+    return typing.cast(dict[str, Any], loaded_tables)
 
 
 def generate_alter_statement(

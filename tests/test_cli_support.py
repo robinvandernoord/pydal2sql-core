@@ -249,7 +249,7 @@ def test_handle_output():
             assert "from typedal import TypeDAL" not in written_data
             assert "create_users" not in written_data
 
-            assert "CREATE TABLE users" in written_data
+            assert "CREATE TABLE users" in written_data or 'CREATE TABLE "users"' in written_data
 
     with tempfile.NamedTemporaryFile() as f:
         # example 2:
