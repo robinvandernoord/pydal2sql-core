@@ -469,7 +469,7 @@ for table in tables:
         print(f'DROP TABLE {table};', file=_file)
     else:
         print(generate_sql(db_new[table], db_type=db_type), file=_file)
-    
+
     print('-- END OF MIGRATION --', file=_file)
     """
 
@@ -510,7 +510,8 @@ def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
     # fixme: on `create` and `drop`, if `func_name` already exists - stop
     #        on `alter`, set a new order number (-> 002)
     contents = textwrap.indent(contents.strip(), " " * 16)
-    return textwrap.dedent(f'''
+    return textwrap.dedent(
+        f'''
 
         @migration
         def {func_name}(db: {cls}):
@@ -521,7 +522,8 @@ def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
             db.commit()
 
             return True
-        ''')
+        '''
+    )
 
 
 def _build_edwh_migrations(contents: str, is_typedal: bool) -> str:
