@@ -420,13 +420,14 @@ if not tables:
 
 
 for table in tables:
-    print('--', table, file=_file)
+    print('-- start ', table, '--', file=_file)
     if table in db_old and table in db_new:
         print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
     elif table in db_old:
         print(f'DROP TABLE {table};', file=_file)
     else:
         print(generate_sql(db_new[table], db_type=db_type), file=_file)
+    print('-- END OF MIGRATION --', file=_file)
     """
 
 TEMPLATE_TYPEDAL = """
@@ -461,13 +462,15 @@ if not tables:
 
 
 for table in tables:
-    print('--', table, file=_file)
+    print('-- start ', table, '--', file=_file)
     if table in db_old and table in db_new:
         print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
     elif table in db_old:
         print(f'DROP TABLE {table};', file=_file)
     else:
         print(generate_sql(db_new[table], db_type=db_type), file=_file)
+    
+    print('-- END OF MIGRATION --', file=_file)
     """
 
 
@@ -500,6 +503,38 @@ def _setup_generic_edwh_migrate(file: Path, is_typedal: bool) -> None:
     rich.print(f"[green] New migrate file {file} created [/green]")
 
 
+def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
+    func_name = sql_to_function_name(contents)
+    func_name = f"{func_name}_{date}_001"
+
+    # fixme: on `create` and `drop`, if `func_name` already exists - stop
+    #        on `alter`, set a new order number (-> 002)
+    contents = textwrap.indent(contents.strip(), " " * 16)
+    return textwrap.dedent(f'''
+
+        @migration
+        def {func_name}(db: {cls}):
+            db.executesql("""
+{contents}
+            );
+            """)
+            db.commit()
+
+            return True
+        ''')
+
+
+def _build_edwh_migrations(contents: str, is_typedal: bool) -> str:
+    cls = "TypeDAL" if is_typedal else "DAL"
+    date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
+
+    return "".join(
+        _build_edwh_migration(migration, cls, date)
+        for migration in contents.split("-- END OF MIGRATION --")
+        if migration.strip()
+    )
+
+
 def _handle_output(
     file: io.StringIO,
     output_file: Path | str | io.StringIO | None,
@@ -510,31 +545,9 @@ def _handle_output(
     contents = file.read()
 
     if output_format == "edwh-migrate":
-        cls = "TypeDAL" if is_typedal else "DAL"
-
-        func_name = sql_to_function_name(contents)
-        date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
-        func_name = f"{func_name}_{date}_001"
-
-        # fixme: on `create` and `drop`, if `func_name` already exists - stop
-        #        on `alter`, set a new order number (-> 002)
-        contents = textwrap.indent(contents, " " * 8)
-        contents = f'''
-
-@migration
-def {func_name}(db: {cls}):
-    db.executesql("""
-{contents}
-    );
-    """)
-    db.commit()
-
-    return True
-
-'''
+        contents = _build_edwh_migrations(contents, is_typedal)
     else:
-        # default, None
-        func_name = ""
+        contents = "\n".join(contents.split("-- END OF MIGRATION --"))
 
     if isinstance(output_file, str):
         output_file = Path(output_file)
@@ -546,7 +559,7 @@ def {func_name}(db: {cls}):
         with output_file.open("a") as f:
             f.write(contents)
 
-        rich.print(f"[green] Written migration {func_name} to {output_file} [/green]")
+        rich.print(f"[green] Written migration(s) to {output_file} [/green]")
 
     elif isinstance(output_file, io.StringIO):
         output_file.write(contents)
