@@ -43,7 +43,7 @@ typedal = [
 all = [
     "psycopg2-binary",
     "pymysql",
-    "typedal",
+    "TypeDAL",
 ]
 
 psql = [
