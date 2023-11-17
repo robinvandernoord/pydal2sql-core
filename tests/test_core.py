@@ -2,7 +2,12 @@ import pydal
 import pytest
 from pydal import DAL, Field
 
-from src.pydal2sql_core import SUPPORTED_DATABASE_TYPES, generate_sql, core_create, core_alter
+from src.pydal2sql_core import (
+    SUPPORTED_DATABASE_TYPES,
+    core_alter,
+    core_create,
+    generate_sql,
+)
 from src.pydal2sql_core.core import _build_dummy_migrator, sql_fields_through_tablefile
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 

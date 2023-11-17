@@ -9,11 +9,15 @@ import select
 import string
 import sys
 import textwrap
+import traceback
 import typing
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+import git
+import gitdb.exc
 import rich
 from black.files import find_project_root
 from git.objects.blob import Blob
@@ -26,6 +30,7 @@ from witchery import (
     find_missing_variables,
     generate_magic_code,
     has_local_imports,
+    remove_if_falsey_blocks,
     remove_import,
     remove_local_imports,
     remove_specific_variables,
@@ -33,10 +38,12 @@ from witchery import (
 
 from .helpers import flatten
 from .types import (
+    _SUPPORTED_OUTPUT_FORMATS,
     DEFAULT_OUTPUT_FORMAT,
     SUPPORTED_DATABASE_TYPES_WITH_ALIASES,
     SUPPORTED_OUTPUT_FORMATS,
     DummyDAL,
+    DummyTypeDAL,
 )
 
 
@@ -201,7 +208,7 @@ def get_file_for_commit(filename: str, commit_version: str = "latest", repo: Rep
     return read_blob(file_at_commit)
 
 
-def get_file_for_version(filename: str, version: str, prompt_description: str = "") -> str:
+def get_file_for_version(filename: str, version: str, prompt_description: str = "", with_git: bool = True) -> str:
     """
     Get the contents of a file based on the version specified.
 
@@ -213,7 +220,7 @@ def get_file_for_version(filename: str, version: str, prompt_description: str = 
     Returns:
         str: The contents of the file as a string.
     """
-    if version == "current":
+    if not with_git or version == "current":
         return Path(filename).read_text()
     elif version == "stdin":  # pragma: no cover
         print_if_interactive(
@@ -224,8 +231,11 @@ def get_file_for_version(filename: str, version: str, prompt_description: str = 
         result = sys.stdin.read()
         print_if_interactive("[blue]---[/blue]", file=sys.stderr)
         return result
-    else:
-        return get_file_for_commit(filename, version)
+    elif with_git:
+        try:
+            return get_file_for_commit(filename, version)
+        except (git.exc.GitError, gitdb.exc.ODBError) as e:
+            raise FileNotFoundError(f"{filename}@{version}") from e
 
 
 def extract_file_version_and_path(
@@ -386,7 +396,7 @@ def ensure_no_migrate_on_real_db(
     return code
 
 
-MAX_RETRIES = 20
+MAX_RETRIES = 30
 
 # todo: overload more methods
 
@@ -411,10 +421,12 @@ $code_before
 db_old = db
 db_new = db = database = DummyDAL(None, migrate=False)
 
+$extra
+
 $code_after
 
 if not tables:
-    tables = set(db_old._tables + db_new._tables)
+    tables = set(db_old._tables + db_new._tables) - _special_tables
 
 if not tables:
     raise ValueError('no-tables-found')
@@ -452,10 +464,12 @@ $code_before
 db_old = db
 db_new = db = database = DummyDAL(None, migrate=False)
 
+$extra
+
 $code_after
 
 if not tables:
-    tables = set(db_old._tables + db_new._tables) - {"typedal_cache", "typedal_cache_dependency"}
+    tables = set(db_old._tables + db_new._tables) - _special_tables
 
 if not tables:
     raise ValueError('no-tables-found')
@@ -548,8 +562,12 @@ def _handle_output(
 
     if output_format == "edwh-migrate":
         contents = _build_edwh_migrations(contents, is_typedal)
-    else:
+    elif output_format in {"default", "sql"} or not output_format:
         contents = "\n".join(contents.split("-- END OF MIGRATION --"))
+    else:
+        raise ValueError(
+            f"Unknown format {output_format}. " f"Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}"
+        )
 
     if isinstance(output_file, str):
         output_file = Path(output_file)
@@ -570,6 +588,43 @@ def _handle_output(
         print(contents)
 
 
+IMPORT_IN_STR = re.compile(r'File "<string>", line (\d+), in <module>')
+
+
+def _handle_import_error(code: str, error: ImportError) -> str:
+    # error is deeper in a package, find the related import in the code:
+    tb_lines = traceback.format_exc().splitlines()
+
+    for line in tb_lines:
+        if matches := IMPORT_IN_STR.findall(line):
+            # 'File "<string>", line 15, in <module>'
+            line_no = int(matches[0]) - 1
+            lines = code.split("\n")
+            return lines[line_no]
+
+    # I don't know how to trigger this case:
+    raise ValueError("Faulty import could not be automatically deleted") from error  # pragma: no cover
+
+
+MISSING_RELATIONSHIP = re.compile(r"Cannot resolve reference (\w+) in \w+ definition")
+
+
+def _handle_relation_error(error: KeyError) -> tuple[str, str]:
+    if not (table := MISSING_RELATIONSHIP.findall(str(error))):
+        # other error, raise again
+        raise error
+
+    t = table[0]
+
+    return (
+        t,
+        """
+    db.define_table('%s', redefine=True)
+    """
+        % t,
+    )
+
+
 def handle_cli(
     code_before: str,
     code_after: str,
@@ -578,7 +633,7 @@ def handle_cli(
     verbose: Optional[bool] = False,
     noop: Optional[bool] = False,
     magic: Optional[bool] = False,
-    function_name: Optional[str] = "define_tables",
+    function_name: Optional[str | tuple[str, ...]] = "define_tables",
     use_typedal: bool | typing.Literal["auto"] = "auto",
     output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
     output_file: Optional[str | Path | io.StringIO] = None,
@@ -608,12 +663,18 @@ def handle_cli(
     if use_typedal == "auto":
         use_typedal = "typedal" in code_before.lower() or "typedal" in code_after.lower()
 
+    if function_name:
+        define_table_functions: set[str] = set(function_name) if isinstance(function_name, tuple) else {function_name}
+    else:
+        define_table_functions = set()
+
     template = TEMPLATE_TYPEDAL if use_typedal else TEMPLATE_PYDAL
 
     to_execute = string.Template(textwrap.dedent(template))
 
     code_before = ensure_no_migrate_on_real_db(code_before, fix=magic)
     code_after = ensure_no_migrate_on_real_db(code_after, fix=magic)
+    extra_code = ""
 
     generated_code = to_execute.substitute(
         {
@@ -621,7 +682,7 @@ def handle_cli(
             "db_type": db_type or "",
             "code_before": textwrap.dedent(code_before),
             "code_after": textwrap.dedent(code_after),
-            "extra": "",
+            "extra": extra_code,
         }
     )
     if verbose or noop:
@@ -635,7 +696,9 @@ def handle_cli(
     catch: dict[str, Any] = {}
     retry_counter = MAX_RETRIES
 
-    magic_vars = {"_file", "DummyDAL"}
+    magic_vars = {"_file", "DummyDAL", "_special_tables"}
+    special_tables: set[str] = {"typedal_cache", "typedal_cache_dependency"} if use_typedal else set()
+
     while retry_counter:
         retry_counter -= 1
         try:
@@ -646,36 +709,51 @@ def handle_cli(
             # another argument could be added for locals, but adding simply {} changes the behavior negatively.
             # so for now, only globals is passed.
             catch["_file"] = io.StringIO()  # <- every print should go to this file, so we can handle it afterwards
-            catch["DummyDAL"] = DummyDAL  # <- use a fake DAL that doesn't actually run queries
+            catch["DummyDAL"] = (
+                DummyTypeDAL if use_typedal else DummyDAL
+            )  # <- use a fake DAL that doesn't actually run queries
+            catch["_special_tables"] = special_tables  # <- e.g. typedal_cache, auth_user
             # note: when adding something to 'catch', also add it to magic_vars!!!
 
             exec(generated_code, catch)  # nosec: B102
-            print("post exec")  # fixme: remove
             _handle_output(catch["_file"], output_file, output_format, is_typedal=use_typedal)
             return True  # success!
         except ValueError as e:
-            err = e
-
             if str(e) != "no-tables-found":  # pragma: no cover
-                raise e
+                warnings.warn(str(e), source=e)
+                return False
 
-            if function_name:
-                define_tables = find_function_to_call(generated_code, function_name)
+            if define_table_functions:
+                any_found = False
+                for function_name in define_table_functions:
+                    define_tables = find_function_to_call(generated_code, function_name)
 
-                # if define_tables function is found, add call to it at end of code
-                if define_tables is not None:
-                    generated_code = add_function_call(generated_code, function_name, multiple=True)
+                    # if define_tables function is found, add call to it at end of code
+                    if define_tables is not None:
+                        generated_code = add_function_call(generated_code, function_name, multiple=True)
+                        any_found = True
+
+                if any_found:
+                    # hurray!
                     continue
 
             # else: no define_tables or other method to use found.
 
             print(f"No tables found in the top-level or {function_name} function!", file=sys.stderr)
-            print(
-                "Please use `db.define_table` or `database.define_table`, "
-                "or if you really need to use an alias like my_db.define_tables, "
-                "add `my_db = db` at the top of the file or pass `--db-name mydb`.",
-                file=sys.stderr,
-            )
+            if use_typedal:
+                print(
+                    "Please use `db.define` or `database.define`, "
+                    "or if you really need to use an alias like my_db.define, "
+                    "add `my_db = db` at the top of the file or pass `--db-name mydb`.",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "Please use `db.define_table` or `database.define_table`, "
+                    "or if you really need to use an alias like my_db.define_tables, "
+                    "add `my_db = db` at the top of the file or pass `--db-name mydb`.",
+                    file=sys.stderr,
+                )
             print(f"You can also specify a --function to use something else than {function_name}.", file=sys.stderr)
 
             return False
@@ -693,7 +771,10 @@ def handle_cli(
 
             # postponed: this can possibly also be achieved by updating the 'catch' dict
             #   instead of injecting in the string.
-            extra_code = generate_magic_code(missing_vars)
+            extra_code = extra_code + "\n" + textwrap.dedent(generate_magic_code(missing_vars))
+
+            code_before = remove_if_falsey_blocks(code_before)
+            code_after = remove_if_falsey_blocks(code_after)
 
             generated_code = to_execute.substitute(
                 {
@@ -708,7 +789,47 @@ def handle_cli(
             # should include ModuleNotFoundError
             err = e
             # if we catch an ImportError, we try to remove the import and retry
-            generated_code = remove_import(generated_code, e.name)
+            if not e.path:
+                # code exists in code itself
+                code_before = remove_import(code_before, e.name or "")
+                code_after = remove_import(code_after, e.name or "")
+            else:
+                to_remove = _handle_import_error(generated_code, e)
+                code_before = code_before.replace(to_remove, "\n")
+                code_after = code_after.replace(to_remove, "\n")
+
+            generated_code = to_execute.substitute(
+                {
+                    "tables": flatten(tables or []),
+                    "db_type": db_type or "",
+                    "extra": textwrap.dedent(extra_code),
+                    "code_before": textwrap.dedent(code_before),
+                    "code_after": textwrap.dedent(code_after),
+                }
+            )
+
+        except KeyError as e:
+            err = e
+            table_name, table_definition = _handle_relation_error(e)
+            special_tables.add(table_name)
+            extra_code = extra_code + "\n" + textwrap.dedent(table_definition)
+
+            generated_code = to_execute.substitute(
+                {
+                    "tables": flatten(tables or []),
+                    "db_type": db_type or "",
+                    "extra": textwrap.dedent(extra_code),
+                    "code_before": textwrap.dedent(code_before),
+                    "code_after": textwrap.dedent(code_after),
+                }
+            )
+        except Exception as e:
+            err = e
+            # otherwise: give up
+            retry_counter = 0
+        finally:
+            # reset:
+            typing.TYPE_CHECKING = False
 
         if retry_counter < 1:  # pragma: no cover
             rich.print(f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'}", file=sys.stderr)
@@ -725,7 +846,7 @@ def core_create(
     magic: bool = False,
     noop: bool = False,
     verbose: bool = False,
-    function: Optional[str] = None,
+    function: Optional[str | tuple[str, ...]] = None,
     output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
     output_file: Optional[str | Path] = None,
 ) -> bool:
@@ -754,9 +875,17 @@ def core_create(
     """
     git_root = find_git_root() or Path(os.getcwd())
 
+    functions: set[str] = set()
+    if function:  # pragma: no cover
+        if isinstance(function, tuple):
+            functions.update(function)
+        else:
+            functions.add(function)
+
     if filename and ":" in filename:
         # e.g. models.py:define_tables
-        filename, function = filename.split(":", 1)
+        filename, _function = filename.split(":", 1)
+        functions.add(_function)
 
     file_version, file_path = extract_file_version_and_path(
         filename, default_version="current" if filename else "stdin"
@@ -764,7 +893,7 @@ def core_create(
     file_exists, file_absolute_path = get_absolute_path_info(file_path, file_version, git_root)
 
     if not file_exists:
-        raise ValueError(f"Source file {filename} could not be found.")
+        raise FileNotFoundError(f"Source file {filename} could not be found.")
 
     text = get_file_for_version(file_absolute_path, file_version, prompt_description="table definition")
 
@@ -776,7 +905,7 @@ def core_create(
         verbose=verbose,
         noop=noop,
         magic=magic,
-        function_name=function,
+        function_name=tuple(functions),
         output_format=output_format,
         output_file=output_file,
     )
@@ -821,15 +950,21 @@ def core_alter(
         ValueError: If either of the source files cannot be found, if no tables could be found in the code,
              or if the codes before and after are identical.
     """
-    git_root = find_git_root() or Path(os.getcwd())
+    git_root = find_git_root(filename_before) or find_git_root(filename_after)
+
+    functions: set[str] = set()
+    if function:  # pragma: no cover
+        functions.add(function)
 
     if filename_before and ":" in filename_before:
         # e.g. models.py:define_tables
-        filename_before, function = filename_before.split(":", 1)
+        filename_before, _function = filename_before.split(":", 1)
+        functions.add(_function)
 
     if filename_after and ":" in filename_after:
         # e.g. models.py:define_tables
-        filename_after, function = filename_after.split(":", 1)
+        filename_after, _function = filename_after.split(":", 1)
+        functions.add(_function)
 
     before, after = extract_file_versions_and_paths(filename_before, filename_after)
 
@@ -846,14 +981,20 @@ def core_alter(
         message += "" if before_exists else f"Path {filename_before} does not exist! "
         if filename_before != filename_after:
             message += "" if after_exists else f"Path {filename_after} does not exist!"
-        raise ValueError(message)
+        raise FileNotFoundError(message)
 
     try:
         code_before = get_file_for_version(
-            before_absolute_path, version_before, prompt_description="current table definition"
+            before_absolute_path,
+            version_before,
+            prompt_description="current table definition",
+            with_git=git_root is not None,
         )
         code_after = get_file_for_version(
-            after_absolute_path, version_after, prompt_description="desired table definition"
+            after_absolute_path,
+            version_after,
+            prompt_description="desired table definition",
+            with_git=git_root is not None,
         )
 
         if not (code_before and code_after):
@@ -875,11 +1016,11 @@ def core_alter(
                 magic,
                 noop,
                 verbose,
-                function,
+                tuple(functions),
                 output_format,
                 output_file,
             )
-        except Exception:
+        except Exception:  # pragma: no cover
             return False
 
     return handle_cli(
@@ -890,7 +1031,7 @@ def core_alter(
         verbose=verbose,
         noop=noop,
         magic=magic,
-        function_name=function,
+        function_name=tuple(functions),
         output_format=output_format,
         output_file=output_file,
     )

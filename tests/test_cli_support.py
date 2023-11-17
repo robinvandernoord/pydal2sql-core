@@ -9,12 +9,15 @@ import pytest
 from contextlib_chdir import chdir
 
 from src.pydal2sql_core.cli_support import (
+    _handle_output,
+    core_alter,
+    core_create,
     ensure_no_migrate_on_real_db,
     extract_file_versions_and_paths,
     find_git_root,
     get_absolute_path_info,
     get_file_for_version,
-    handle_cli, _handle_output,
+    handle_cli,
 )
 from src.pydal2sql_core.helpers import TempdirOrExistingDir
 from tests.mock_git import mock_git
@@ -228,11 +231,72 @@ def test_handle_cli(capsys):
     assert not captured.out
 
 
+def test_dummy_dal():
+    code = """
+    tab = db.define_table(
+        "my_table",
+        Field('string')
+    )
+    
+    assert not db(db.my_table).count().fake
+    
+    assert not db.my_table.insert()
+    
+    assert not db.my_table.truncate()
+    
+    """
+    assert handle_cli("", textwrap.dedent(code), magic=True, db_type="sqlite")
+
+
+def test_dummy_typedal():
+    code = """
+    import typedal
+    import typing
+    typing.TYPE_CHECKING = True # <- should break httpx
+    import httpx
+    
+    assert not httpx
+    
+    @db.define
+    class MyTable(typedal.TypedTable):
+        something: str
+        
+    assert not MyTable.insert(something='123')
+        
+    assert not MyTable.update(MyTable.id > 0, something='456')
+    """
+
+    assert handle_cli("", textwrap.dedent(code), magic=True, db_type="sqlite")
+
+
+def test_break_cli(capsys):
+    code = """
+    raise RecursionError("I broke it!")
+    """
+
+    assert not handle_cli("", textwrap.dedent(code), magic=True, db_type="sqlite")
+    captured = capsys.readouterr()
+
+    assert "Code could not be fixed automagically!" in captured.err
+    assert "I broke it!" in captured.err
+
+    code = """
+    raise KeyError('another one')
+    """
+
+    with pytest.raises(KeyError):
+        assert not handle_cli("", textwrap.dedent(code), magic=True, db_type="sqlite")
+
+    with pytest.warns(match=".+invalid.+edwh-migrate.+"):
+        assert not handle_cli("", "db.define_table('test')", magic=True, db_type="sqlite", output_format="invalid")
+
+
 def test_handle_output():
-    output = io.StringIO("""
+    output = io.StringIO(
+        """
     CREATE TABLE users (...);
     """
-                         )
+    )
     with tempfile.NamedTemporaryFile() as f:
         # example 1:
         # - Path
@@ -265,3 +329,70 @@ def test_handle_output():
             assert "from typedal import TypeDAL" in written_data
             assert "create_users" in written_data
             assert "CREATE TABLE users" in written_data
+
+
+pytest_examples = Path("./pytest_examples").resolve()
+before = str(pytest_examples / "pydal_before.py")
+after = str(pytest_examples / "typedal_after.py")
+
+
+def test_core_create():
+    with pytest.raises(FileNotFoundError):
+        assert not core_create("/tmp/fake-migration.py")
+
+    assert not core_create(before)
+    assert not core_create(before, function="define_my_tables")
+    assert not core_create(before, magic=True)
+    assert not core_create(before, magic=True, function="define_my_tables")
+    assert core_create(before, magic=True, function="define_my_tables", db_type="sqlite")
+
+    assert not core_create(after)
+    assert not core_create(after, magic=True)
+    assert not core_create(after, db_type="sqlite")
+    buffer = io.StringIO()
+
+    assert core_create(
+        f"{after}:define_td_tables",
+        magic=True,
+        db_type="sqlite",
+        output_file=buffer,
+    )
+    buffer.seek(0)
+
+    assert buffer.read().count("CREATE") == 2
+
+
+def test_core_alter():
+    with pytest.raises(FileNotFoundError):
+        assert not core_alter("fake-first", "fake-second")
+
+    with pytest.raises(FileNotFoundError):
+        # real file, fake git branch:
+        assert not core_alter(f"{before}@fake", f"{after}@fake")
+
+    with tempfile.NamedTemporaryFile() as f:
+        # f exists but empty
+        assert not core_alter(f.name, f.name)
+
+        # same contents
+        p = Path(f.name)
+        p.write_text("print()")
+        assert not core_alter(f.name, f.name)
+
+    assert not core_alter(before, after)
+    assert not core_alter(before, after, magic=True, db_type="sqlite")
+    assert not core_alter(f"{before}:define_my_tables", f"{after}:define_td_tables")
+    buffer = io.StringIO()
+    assert core_alter(
+        f"{before}:define_my_tables",
+        f"{after}:define_td_tables",
+        db_type="sqlite",
+        magic=True,
+        output_file=buffer,
+    )
+    buffer.seek(0)
+
+    contents = buffer.read()
+
+    assert "CREATE" not in contents
+    assert "ALTER" in contents

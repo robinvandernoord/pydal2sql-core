@@ -34,24 +34,44 @@ def test_TempdirOrExistingDir():
 
 
 def test_sql_to_function_name():
-    assert sql_to_function_name("""
+    assert (
+        sql_to_function_name(
+            """
             -- user
         CREATE TABLE user(
             id SERIAL PRIMARY KEY,
             name VARCHAR(512) NOT NULL,
             age INTEGER NOT NULL
         );
-    """) == "create_user"
+    """
+        )
+        == "create_user"
+    )
 
-    assert sql_to_function_name("""
+    assert (
+        sql_to_function_name(
+            """
     ALTER TABLE user
         ADD COLUMN email VARCHAR(255);
-    """) == "alter_user"
+    """
+        )
+        == "alter_user"
+    )
 
-    assert sql_to_function_name("""
+    assert (
+        sql_to_function_name(
+            """
      DROP TABLE user;
-     """) == "drop_user"
+     """
+        )
+        == "drop_user"
+    )
 
-    assert sql_to_function_name("""
+    assert (
+        sql_to_function_name(
+            """
      DELETE FROM products WHERE category = 'OldCategory';
-     """) == "unknown_migration"
+     """
+        )
+        == "unknown_migration"
+    )
