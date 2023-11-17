@@ -22,8 +22,7 @@ dependencies = [
     "rich",
     "pydal",
     "GitPython",
-    "contextlib_chdir",
-    "witchery >= 0.1.1",
+    "witchery >= 0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -33,11 +32,17 @@ dev = [
     "python-semantic-release < 8",
     "psycopg2-binary",
     "pymysql",
+    "contextlib_chdir",
+]
+
+typedal = [
+    "TypeDAL",
 ]
 
 all = [
     "psycopg2-binary",
     "pymysql",
+    "typedal",
 ]
 
 psql = [
