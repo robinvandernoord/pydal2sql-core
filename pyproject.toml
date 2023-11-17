@@ -33,6 +33,7 @@ dev = [
     "psycopg2-binary",
     "pymysql",
     "contextlib_chdir",
+    "TypeDAL",
 ]
 
 typedal = [
@@ -42,7 +43,7 @@ typedal = [
 all = [
     "psycopg2-binary",
     "pymysql",
-    "typedal",
+    "TypeDAL",
 ]
 
 psql = [
