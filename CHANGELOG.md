@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.2 (2023-11-20)
+
+### Fix
+
+* **create:** Migrations are now printed in the same order the tables are defined ([`ad2b1f8`](https://github.com/robinvandernoord/pydal2sql-core/commit/ad2b1f8e281f425baee1fb2efec84f0850f5c307))
+
 ## v0.3.1 (2023-11-20)
 
 ### Fix
