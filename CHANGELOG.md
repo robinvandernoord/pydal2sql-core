@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.3 (2023-11-20)
+
+### Fix
+
+* Don't `create` on `alter` fail automatically, let the user decide ([`2fbc3cc`](https://github.com/robinvandernoord/pydal2sql-core/commit/2fbc3cc0fe085a7aeec466c4f6fb3ce82e96fd72))
+
 ## v0.3.2 (2023-11-20)
 
 ### Fix
