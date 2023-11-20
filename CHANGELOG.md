@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.0 (2023-11-20)
+
+### Feature
+
+* Prevent duplicate migrations in edwh-migrate format ([`1592173`](https://github.com/robinvandernoord/pydal2sql-core/commit/1592173f91dd5ccfab49137ce345dddc44c1fa90))
+
 ## v0.2.0 (2023-11-17)
 
 ### Feature
