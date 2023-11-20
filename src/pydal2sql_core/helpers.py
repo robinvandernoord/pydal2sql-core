@@ -64,6 +64,25 @@ def _get_typing_args_recursive(some: ANY_TYPE) -> list[type]:
     return [typing.cast(type, some)]
 
 
+def uniq(some_list: list[T]) -> list[T]:
+    """
+    Remove duplicates from some_list while preserving the initial order.
+    """
+    return list(dict.fromkeys(some_list))
+
+
+def excl(some_list: list[T], without: typing.Iterable[T] | typing.Any) -> list[T]:
+    """
+    Remove 'without' from 'some list'.
+
+    Without can be an iterable of items to remove or a single value.
+    """
+    if isinstance(without, typing.Iterable):
+        return [_ for _ in some_list if _ not in without]
+    else:
+        return [_ for _ in some_list if _ != without]
+
+
 def get_typing_args(some: ANY_TYPE) -> list[type | str]:
     """
     Extract typing.get_args for Unions, Literals etc.

@@ -35,7 +35,7 @@ from witchery import (
     remove_specific_variables,
 )
 
-from .helpers import flatten
+from .helpers import excl, flatten, uniq
 from .types import (
     _SUPPORTED_OUTPUT_FORMATS,
     DEFAULT_OUTPUT_FORMAT,
@@ -425,7 +425,8 @@ $extra
 $code_after
 
 if not tables:
-    tables = set(db_old._tables + db_new._tables) - _special_tables
+    tables = _uniq(db_old._tables + db_new._tables)
+    tables = _excl(tables, _special_tables)
 
 if not tables:
     raise ValueError('no-tables-found')
@@ -468,7 +469,8 @@ $extra
 $code_after
 
 if not tables:
-    tables = set(db_old._tables + db_new._tables) - _special_tables
+    tables = _uniq(db_old._tables + db_new._tables)
+    tables = _excl(tables, _special_tables)
 
 if not tables:
     raise ValueError('no-tables-found')
@@ -726,7 +728,7 @@ def handle_cli(
     catch: dict[str, Any] = {}
     retry_counter = MAX_RETRIES
 
-    magic_vars = {"_file", "DummyDAL", "_special_tables"}
+    magic_vars = {"_file", "DummyDAL", "_special_tables", "_uniq", "_excl"}
     special_tables: set[str] = {"typedal_cache", "typedal_cache_dependency"} if use_typedal else set()
 
     while retry_counter:
@@ -744,6 +746,9 @@ def handle_cli(
             )  # <- use a fake DAL that doesn't actually run queries
             catch["_special_tables"] = special_tables  # <- e.g. typedal_cache, auth_user
             # note: when adding something to 'catch', also add it to magic_vars!!!
+
+            catch["_uniq"] = uniq  # function to make a list unique without changing order
+            catch["_excl"] = excl  # function to exclude items from a list
 
             exec(generated_code, catch)  # nosec: B102
             _handle_output(catch["_file"], output_file, output_format, is_typedal=use_typedal)

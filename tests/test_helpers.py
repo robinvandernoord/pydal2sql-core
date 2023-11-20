@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.pydal2sql_core.__about__ import __version__
 from src.pydal2sql_core.cli_support import sql_to_function_name
-from src.pydal2sql_core.helpers import TempdirOrExistingDir, flatten, get_typing_args
+from src.pydal2sql_core.helpers import TempdirOrExistingDir, flatten, get_typing_args, uniq, excl
 
 
 def test_about():
@@ -75,3 +75,13 @@ def test_sql_to_function_name():
         )
         == "unknown_migration"
     )
+
+
+def test_uniq():
+    assert uniq([1, 2, 3, 3, 2, 1]) == [1, 2, 3]
+    assert uniq([3, 2, 1, 3, 1, 2]) == [3, 2, 1]
+
+
+def test_excl():
+    assert excl([1, 2, 3, 4, 3, 2, 1], [1, 2]) == [3, 4, 3]
+    assert excl([1, 2, 3, 4, 3, 2, 1], 4) == [1, 2, 3, 3, 2, 1]
