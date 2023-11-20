@@ -587,7 +587,8 @@ def _handle_output(
     contents = file.read()
 
     if isinstance(output_file, str):
-        output_file = Path(output_file)
+        # `--output-file -` will print to stdout
+        output_file = None if output_file == "-" else Path(output_file)
 
     if output_format == "edwh-migrate":
         contents = _build_edwh_migrations(contents, is_typedal, output_file if isinstance(output_file, Path) else None)
