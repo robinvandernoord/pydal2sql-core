@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.1 (2023-11-20)
+
+### Fix
+
+* Use `--output-file -` will print to stdout ([`e49a7ac`](https://github.com/robinvandernoord/pydal2sql-core/commit/e49a7ac171089fb4c06c38d7eebdff2eda49f8cf))
+* Don't write empty migrations ([`c2cb33e`](https://github.com/robinvandernoord/pydal2sql-core/commit/c2cb33ede1db6de95261aa361c66d9e992b0219b))
+
 ## v0.3.0 (2023-11-20)
 
 ### Feature
