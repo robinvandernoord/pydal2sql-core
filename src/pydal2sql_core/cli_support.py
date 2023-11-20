@@ -11,7 +11,6 @@ import sys
 import textwrap
 import traceback
 import typing
-import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -517,12 +516,29 @@ def _setup_generic_edwh_migrate(file: Path, is_typedal: bool) -> None:
     rich.print(f"[green] New migrate file {file} created [/green]")
 
 
-def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
-    func_name = sql_to_function_name(contents)
-    func_name = f"{func_name}_{date}_001"
+def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional[str] = None) -> str:
+    sql_func_name = sql_to_function_name(contents)
+    func_name = "_placeholder_"
 
-    # fixme: on `create` and `drop`, if `func_name` already exists - stop
-    #        on `alter`, set a new order number (-> 002)
+    for n in range(1, 1000):
+        func_name = f"{sql_func_name}_{date}_{str(n).zfill(3)}"
+
+        if existing and f"def {func_name}" in existing:
+            if contents.replace(" ", "").replace("\n", "") in existing.replace(" ", "").replace("\n", ""):
+                rich.print(f"[yellow] migration {func_name} already exists, skipping! [/yellow]")
+                return ""
+            elif func_name.startswith("alter"):
+                # bump number because alter migrations are different
+                continue
+            else:
+                rich.print(
+                    f"[red] migration {func_name} already exists [bold]with different contents[/bold], skipping! [/red]"
+                )
+                return ""
+        else:
+            # okay function name, stop incrementing
+            break
+
     contents = textwrap.indent(contents.strip(), " " * 16)
     return textwrap.dedent(
         f'''
@@ -531,7 +547,6 @@ def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
         def {func_name}(db: {cls}):
             db.executesql("""
 {contents}
-            );
             """)
             db.commit()
 
@@ -540,12 +555,14 @@ def _build_edwh_migration(contents: str, cls: str, date: str) -> str:
     )
 
 
-def _build_edwh_migrations(contents: str, is_typedal: bool) -> str:
+def _build_edwh_migrations(contents: str, is_typedal: bool, output: Optional[Path] = None) -> str:
     cls = "TypeDAL" if is_typedal else "DAL"
     date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
 
+    existing = output.read_text() if output and output.exists() else None
+
     return "".join(
-        _build_edwh_migration(migration, cls, date)
+        _build_edwh_migration(migration, cls, date, existing)
         for migration in contents.split("-- END OF MIGRATION --")
         if migration.strip()
     )
@@ -560,8 +577,11 @@ def _handle_output(
     file.seek(0)
     contents = file.read()
 
+    if isinstance(output_file, str):
+        output_file = Path(output_file)
+
     if output_format == "edwh-migrate":
-        contents = _build_edwh_migrations(contents, is_typedal)
+        contents = _build_edwh_migrations(contents, is_typedal, output_file if isinstance(output_file, Path) else None)
     elif output_format in {"default", "sql"} or not output_format:
         contents = "\n".join(contents.split("-- END OF MIGRATION --"))
     else:
@@ -569,23 +589,23 @@ def _handle_output(
             f"Unknown format {output_format}. " f"Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}"
         )
 
-    if isinstance(output_file, str):
-        output_file = Path(output_file)
-
     if isinstance(output_file, Path):
         if output_format == "edwh-migrate" and (not output_file.exists() or output_file.stat().st_size == 0):
             _setup_generic_edwh_migrate(output_file, is_typedal)
 
-        with output_file.open("a") as f:
-            f.write(contents)
+        if contents.strip():
+            with output_file.open("a") as f:
+                f.write(contents)
 
-        rich.print(f"[green] Written migration(s) to {output_file} [/green]")
+            rich.print(f"[green] Written migration(s) to {output_file} [/green]")
+        else:
+            rich.print(f"[yellow] Nothing to write to {output_file} [/yellow]")
 
     elif isinstance(output_file, io.StringIO):
         output_file.write(contents)
     else:
         # no file, just print to stdout:
-        print(contents)
+        print(contents.strip())
 
 
 IMPORT_IN_STR = re.compile(r'File "<string>", line (\d+), in <module>')
@@ -720,7 +740,7 @@ def handle_cli(
             return True  # success!
         except ValueError as e:
             if str(e) != "no-tables-found":  # pragma: no cover
-                warnings.warn(str(e), source=e)
+                rich.print(f"[yellow]{e}[/yellow]", file=sys.stderr)
                 return False
 
             if define_table_functions:

@@ -287,14 +287,20 @@ def test_break_cli(capsys):
     with pytest.raises(KeyError):
         assert not handle_cli("", textwrap.dedent(code), magic=True, db_type="sqlite")
 
-    with pytest.warns(match=".+invalid.+edwh-migrate.+"):
-        assert not handle_cli("", "db.define_table('test')", magic=True, db_type="sqlite", output_format="invalid")
+    assert not handle_cli("", "db.define_table('test')", magic=True, db_type="sqlite", output_format="invalid")
+    captured = capsys.readouterr()
+    assert "invalid" in captured.err
+    assert "edwh-migrate" in captured.err
 
 
-def test_handle_output():
+def test_handle_output(capsys):
     output = io.StringIO(
         """
     CREATE TABLE users (...);
+    -- END OF MIGRATION --
+    
+    ALTER TABLE users (...);
+    -- END OF MIGRATION --
     """
     )
     with tempfile.NamedTemporaryFile() as f:
@@ -321,6 +327,8 @@ def test_handle_output():
         # - edwh-migrate
         # - typedal
         _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        captured = capsys.readouterr()
+        assert "Written migration" in captured.out
 
         with open(f.name) as _f:
             written_data = _f.read()
@@ -329,6 +337,50 @@ def test_handle_output():
             assert "from typedal import TypeDAL" in written_data
             assert "create_users" in written_data
             assert "CREATE TABLE users" in written_data
+            assert "001" in written_data
+
+        # same output again:
+        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        captured = capsys.readouterr()
+        assert "Nothing to write" in captured.out
+
+        # now with a slightly different CREATE:
+        # should not write
+        output = io.StringIO(
+            """
+        CREATE TABLE users (...2);
+        -- END OF MIGRATION --
+
+        ALTER TABLE users (...);
+        -- END OF MIGRATION --
+        """
+        )
+
+        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        captured = capsys.readouterr()
+        assert "with different contents" in captured.out
+        assert "Written migration" not in captured.out
+
+        # now with a different ALTER:
+        # should bump idx
+        output = io.StringIO(
+            """
+        CREATE TABLE users (...);
+        -- END OF MIGRATION --
+
+        ALTER TABLE users (...2);
+        -- END OF MIGRATION --
+        """
+        )
+
+        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        captured = capsys.readouterr()
+        assert "Written migration" in captured.out
+
+        with open(f.name) as _f:
+            written_data = _f.read()
+
+            assert "002" in written_data
 
 
 pytest_examples = Path("./pytest_examples").resolve()
