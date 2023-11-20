@@ -383,6 +383,28 @@ def test_handle_output(capsys):
             assert "002" in written_data
 
 
+def test_empty_output(capsys):
+    output = io.StringIO(
+        """
+        -- start users --
+    """
+    )
+    with tempfile.NamedTemporaryFile() as f:
+        # example 1:
+        # - Path
+        # - default
+        # - pydal
+        path = Path(f.name)
+        _handle_output(output, path, output_format="edwh-migrate", is_typedal=False)
+        captured = capsys.readouterr()
+        assert "Nothing to write" in captured.out
+
+        with path.open() as f:
+            written_data = f.read()
+
+            assert "@migration" not in written_data
+
+
 pytest_examples = Path("./pytest_examples").resolve()
 before = str(pytest_examples / "pydal_before.py")
 after = str(pytest_examples / "typedal_after.py")

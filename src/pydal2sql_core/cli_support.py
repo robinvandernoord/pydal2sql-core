@@ -516,9 +516,13 @@ def _setup_generic_edwh_migrate(file: Path, is_typedal: bool) -> None:
     rich.print(f"[green] New migrate file {file} created [/green]")
 
 
+START_RE = re.compile(r"-- start\s+\w+\s--\n")
+
+
 def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional[str] = None) -> str:
     sql_func_name = sql_to_function_name(contents)
     func_name = "_placeholder_"
+    contents = START_RE.sub("", contents)
 
     for n in range(1, 1000):
         func_name = f"{sql_func_name}_{date}_{str(n).zfill(3)}"
@@ -540,6 +544,11 @@ def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional
             break
 
     contents = textwrap.indent(contents.strip(), " " * 16)
+
+    if not contents.strip():
+        # no real migration!
+        return ""
+
     return textwrap.dedent(
         f'''
 
