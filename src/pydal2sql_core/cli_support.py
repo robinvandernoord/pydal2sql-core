@@ -1039,24 +1039,11 @@ def core_alter(
             raise ValueError(message)
 
         if code_before == code_after:
-            raise ValueError("Both contain the same code!")
+            raise ValueError("Both contain the same code - nothing to alter!")
 
     except ValueError as e:
-        rich.print(f"[yellow] alter failed ({e}), trying create! [/yellow]", file=sys.stderr)
-        try:
-            return core_create(
-                filename_after or filename_before,
-                tables,
-                db_type,
-                magic,
-                noop,
-                verbose,
-                tuple(functions),
-                output_format,
-                output_file,
-            )
-        except Exception:  # pragma: no cover
-            return False
+        rich.print(f"[yellow] {e} [/yellow]", file=sys.stderr)
+        return False
 
     return handle_cli(
         code_before,
