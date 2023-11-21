@@ -95,5 +95,14 @@ try:
         Variant of DummyDAL for TypeDAL.
         """
 
+        def __init__(self, *args: Any, **settings: Any) -> None:
+            """
+            Force TypeDAL to ignore project/env settings.
+            """
+            # dummy typedal should not look at these settings:
+            settings["use_pyproject"] = False
+            settings["use_env"] = False
+            super().__init__(*args, **settings)
+
 except ImportError:  # pragma: no cover
     DummyTypeDAL = DummyDAL  # type: ignore
