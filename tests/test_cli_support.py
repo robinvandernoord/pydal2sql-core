@@ -417,8 +417,8 @@ def test_core_create():
     assert not core_create(before)
     assert not core_create(before, function="define_my_tables")
     assert not core_create(before, magic=True)
-    assert not core_create(before, magic=True, function="define_my_tables")
-    assert core_create(before, magic=True, function="define_my_tables", db_type="sqlite")
+    assert core_create(before, magic=True, function="define_my_tables")
+    assert core_create(before, magic=True, function="define_my_tables", db_type="psql")
 
     assert not core_create(after)
     assert not core_create(after, magic=True)

@@ -32,6 +32,7 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
         "postgres": "psycopg2",
         "psql": "psycopg2",
         "sqlite": "sqlite3",
+        "sqlite:memory": "sqlite3",
         "mysql": "pymysql",
     }
 

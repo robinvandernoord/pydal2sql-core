@@ -102,6 +102,9 @@ try:
             # dummy typedal should not look at these settings:
             settings["use_pyproject"] = False
             settings["use_env"] = False
+            if not settings.get("folder"):
+                settings["folder"] = "/tmp/typedal2sql"
+
             super().__init__(*args, **settings)
 
 except ImportError:  # pragma: no cover
