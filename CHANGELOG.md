@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.4 (2023-12-05)
+
+### Fix
+
+* Sqlite:memory is now mapped to sqlite dialect ([`3aa4666`](https://github.com/robinvandernoord/pydal2sql-core/commit/3aa466602e6acb771fb63189f74cfa8eaaf398f0))
+* **typedal:** TypeDAL 2.2 fix ([`2f2f3e4`](https://github.com/robinvandernoord/pydal2sql-core/commit/2f2f3e446bb714df9d86f8f5b525aeac8cb8dd3d))
+
 ## v0.3.3 (2023-11-20)
 
 ### Fix
