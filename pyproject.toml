@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "rich",
     "pydal",
+    "black",
     "GitPython",
     "witchery >= 0.2.0",
 ]
