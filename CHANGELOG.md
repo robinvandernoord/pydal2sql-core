@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.5 (2024-03-20)
+
+### Fix
+
+* Require 'black' as a dependency ([`3cf51d3`](https://github.com/robinvandernoord/pydal2sql-core/commit/3cf51d3894e90ddd5ea6677c4fdb70a1b03a364b))
+
 ## v0.3.4 (2023-12-05)
 
 ### Fix
