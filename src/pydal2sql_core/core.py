@@ -1,13 +1,21 @@
 """
 Main functionality.
 """
+
+import functools
 import pickle  # nosec: B403
 import typing
 from pathlib import Path
 from typing import Any
 
 from pydal.adapters import MySQL, Postgre, SQLite
-from pydal.dialects import Dialect, MySQLDialect, PostgreDialect, SQLiteDialect
+from pydal.dialects import (
+    Dialect,
+    MySQLDialect,
+    PostgreDialect,
+    SQLDialect,
+    SQLiteDialect,
+)
 from pydal.migrator import Migrator
 from pydal.objects import Table
 
@@ -19,6 +27,58 @@ from .types import (
     DummyDAL,
     SQLAdapter,
 )
+
+
+def sql_not_null(self: SQLDialect, default: Any, field_type: Any) -> str:
+    """
+    Generate a SQL NOT NULL constraint for a field.
+
+    If the default value of the field is callable (e.g., a function like uuid.uuid, datetime.now or a lambda),
+    the function returns "NOT NULL". Otherwise, it returns "NOT NULL DEFAULT %s" where %s is the
+    representation of the default value in SQL.
+
+    Args:
+        self (SQLDialect): The SQL dialect to use.
+        default (Any): The default value of the field.
+        field_type (Any): The type of the field.
+
+    Returns:
+        str: A string representing the SQL NOT NULL constraint for the field.
+    """
+    # default:
+    # if field.notnull and field.default is not None:
+    # return "NOT NULL DEFAULT %s" % self.adapter.represent(default, field_type)
+    # but if 'default' is not a static value (-> callable),
+    # it should not be hardcoded in the migration statement (e.g. default=uuid.uuid, datetime.now etc.)
+    if callable(default):
+        return "NOT NULL"
+    else:
+        return "NOT NULL DEFAULT %s" % self.adapter.represent(default, field_type)
+
+
+def _modify_migrator(self: Migrator) -> Migrator:
+    """
+    Modify the SQL NOT NULL constraint logic of a Migrator object.
+
+    If the Migrator's SQL dialect uses the base SQL NOT NULL logic, this function replaces it with
+    the logic defined in the sql_not_null function. Otherwise, it leaves the Migrator unchanged.
+
+    Args:
+        self (Migrator): The Migrator object to modify.
+
+    Returns:
+        Migrator: The modified Migrator object.
+    """
+    # __func__ to get the function underneath a bound method:
+    if self.adapter.dialect.not_null.__func__ == SQLDialect.not_null:
+        # only modify base SQL notnull.
+        # if dialect has modified logic, that should just be used.
+        # bind 'self' parameter already:
+        bound_method = functools.partial(sql_not_null, self.adapter.dialect)
+        # monkey patch default logic:
+        self.adapter.dialect.not_null = bound_method
+
+    return self
 
 
 def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /, db_folder: str) -> Migrator:
@@ -78,7 +138,9 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
     adapter.dialect = sql_dialect(adapter)
     db._adapter = adapter
 
-    return Migrator(adapter)
+    dummy_migrator = Migrator(adapter)
+
+    return _modify_migrator(dummy_migrator)
 
 
 def generate_create_statement(

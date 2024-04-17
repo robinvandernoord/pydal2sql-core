@@ -1,6 +1,7 @@
 """
 Contains types for core.py.
 """
+
 import typing
 import warnings
 from typing import Any

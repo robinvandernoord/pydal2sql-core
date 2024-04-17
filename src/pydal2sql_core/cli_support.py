@@ -1,6 +1,7 @@
 """
 CLI-Agnostic support.
 """
+
 import contextlib
 import io
 import os
@@ -293,9 +294,9 @@ def extract_file_versions_and_paths(
     """
     version_before, filepath_before = extract_file_version_and_path(
         filename_before,
-        default_version="current"
-        if filename_after and filename_before and filename_after != filename_before
-        else "latest",
+        default_version=(
+            "current" if filename_after and filename_before and filename_after != filename_before else "latest"
+        ),
     )
     version_after, filepath_after = extract_file_version_and_path(filename_after, default_version="current")
 

@@ -22,10 +22,10 @@ def test_create():
             "string",
             notnull=True,
         ),
-        Field("age", "integer", default=18),
+        Field("age", "integer", default=18, notnull=True),
         Field("float", "decimal(2,3)"),
         Field("nicknames", "list:string"),
-        Field("obj", "json"),
+        Field("obj", "json", notnull=True, default=lambda: ["exclude from default"]),
     )
 
     generated = {}
@@ -53,6 +53,10 @@ def test_create():
 
         assert f"nicknames {text_type}" in sql
         assert "age INTEGER" in sql
+        assert "18" in sql  # notnull default
+
+        assert "obj" in sql
+        assert "exclude from default" not in sql  # notnull lambda default
 
     # sqlite
     print(generated["sqlite3"])
