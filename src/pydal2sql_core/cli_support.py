@@ -2,6 +2,7 @@
 CLI-Agnostic support.
 """
 
+import ast
 import contextlib
 import io
 import os
@@ -347,8 +348,42 @@ def get_absolute_path_info(filename: Optional[str], version: str, git_root: Opti
     return exists, absolute_path
 
 
+def check_indentation(code: str, fix: bool = False) -> str:
+    """
+    Check the indentation of the given code.
+
+    This function attempts to parse the code using Python's built-in `ast.parse` function.
+    If the code is correctly indented, it is returned as is. If the code is incorrectly indented,
+    an `IndentationError` is raised. If the `fix` parameter is set to `True`, the function will
+    attempt to fix the indentation using `textwrap.dedent` before returning it.
+
+    Args:
+        code (str): The code to check.
+        fix (bool): Whether to fix the indentation if it is incorrect. Defaults to False.
+
+    Returns:
+        str: The original code if it is correctly indented,
+                or the fixed code if `fix` is True and the code was incorrectly indented.
+
+    Raises:
+        IndentationError: If the code is incorrectly indented and `fix` is False.
+    """
+    if not code:
+        # no code? perfect indentation!
+        return code
+
+    try:
+        ast.parse(code)
+        return code
+    except IndentationError as e:
+        if fix:
+            return textwrap.dedent(code)
+        else:
+            raise e
+
+
 def ensure_no_migrate_on_real_db(
-    code: str, db_names: typing.Iterable[str] = ("db", "database"), fix: typing.Optional[bool] = False
+    code: str, db_names: typing.Iterable[str] = ("db", "database"), fix: bool = False
 ) -> str:
     """
     Ensure that the code does not contain actual migrations on a real database.
@@ -663,9 +698,9 @@ def handle_cli(
     code_after: str,
     db_type: Optional[str] = None,
     tables: Optional[list[str] | list[list[str]]] = None,
-    verbose: Optional[bool] = False,
-    noop: Optional[bool] = False,
-    magic: Optional[bool] = False,
+    verbose: bool = False,
+    noop: bool = False,
+    magic: bool = False,
     function_name: Optional[str | tuple[str, ...]] = "define_tables",
     use_typedal: bool | typing.Literal["auto"] = "auto",
     output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
@@ -705,8 +740,12 @@ def handle_cli(
 
     to_execute = string.Template(textwrap.dedent(template))
 
+    code_before = check_indentation(code_before, fix=magic)
     code_before = ensure_no_migrate_on_real_db(code_before, fix=magic)
+
+    code_after = check_indentation(code_after, fix=magic)
     code_after = ensure_no_migrate_on_real_db(code_after, fix=magic)
+
     extra_code = ""
 
     generated_code = to_execute.substitute(

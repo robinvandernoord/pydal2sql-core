@@ -1,6 +1,8 @@
+import contextlib
 import io
 import os
 import shutil
+import sys
 import tempfile
 import textwrap
 from pathlib import Path
@@ -470,3 +472,32 @@ def test_core_alter():
 
     assert "CREATE" not in contents
     assert "ALTER" in contents
+
+
+@contextlib.contextmanager
+def fake_stdin(data: str):
+    _stdin = sys.stdin
+    try:
+        with tempfile.NamedTemporaryFile(mode='w+t') as tmp:
+            tmp.write(data)
+            tmp.seek(0)
+            sys.stdin = tmp
+            yield
+    finally:
+        sys.stdin = _stdin
+
+
+def test_indent():
+    with fake_stdin("    raise ValueError('')"):
+        with pytest.raises(IndentationError):
+            core_create()
+
+    with fake_stdin("    raise ValueError('')"):
+        assert not core_create(magic=True)
+
+    with fake_stdin("""
+        
+                        db.define_table("empty")
+        
+                    """):
+        assert core_create(magic=True, db_type="sqlite")
