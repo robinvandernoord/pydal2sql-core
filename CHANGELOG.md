@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.7 (2024-05-01)
+
+### Fix
+
+* Allow indented blocks if magic ✨ is enabled ([`98d1955`](https://github.com/robinvandernoord/pydal2sql-core/commit/98d1955e29c9f457fec68c0b4c20de4f7d458ca5))
+
 ## v0.3.6 (2024-04-17)
 
 ### Fix
