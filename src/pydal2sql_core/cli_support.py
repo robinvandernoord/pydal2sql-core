@@ -705,6 +705,7 @@ def handle_cli(
     use_typedal: bool | typing.Literal["auto"] = "auto",
     output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
     output_file: Optional[str | Path | io.StringIO] = None,
+    _update_path: bool = True,
 ) -> bool:
     """
     Handle user input for generating SQL migration statements based on before and after code.
@@ -721,6 +722,7 @@ def handle_cli(
         use_typedal: replace pydal imports with TypeDAL?
         output_format: defaults to just SQL, edwh-migrate migration syntax also supported
         output_file: append the output to a file instead of printing it?
+        _update_path: try adding cwd to PYTHONPATH if failing?
 
     # todo: prefix (e.g. public.)
 
@@ -771,7 +773,12 @@ def handle_cli(
     magic_vars = {"_file", "DummyDAL", "_special_tables", "_uniq", "_excl"}
     special_tables: set[str] = {"typedal_cache", "typedal_cache_dependency"} if use_typedal else set()
 
+    cwd = os.getcwd()
     while retry_counter:
+        if err and cwd not in sys.path:
+            # add current path to PYTHONPATH to possibly resolve imports
+            sys.path.append(os.getcwd())
+
         retry_counter -= 1
         try:
             if verbose:
@@ -907,7 +914,9 @@ def handle_cli(
             typing.TYPE_CHECKING = False
 
         if retry_counter < 1:  # pragma: no cover
-            rich.print(f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'}", file=sys.stderr)
+            rich.print(
+                f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'} ({type(err)})", file=sys.stderr
+            )
             return False
 
     # idk when this would happen, but something definitely went wrong here:
@@ -924,6 +933,7 @@ def core_create(
     function: Optional[str | tuple[str, ...]] = None,
     output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
     output_file: Optional[str | Path] = None,
+    _update_path: bool = True,
 ) -> bool:
     """
     Generates SQL migration statements for creating one or more tables, based on the code in a given source file.
@@ -940,6 +950,7 @@ def core_create(
             If None, the function will use 'define_tables'.
         output_format: defaults to just SQL, edwh-migrate migration syntax also supported
         output_file: append the output to a file instead of printing it?
+        _update_path: try adding cwd to PYTHONPATH if failing?
 
     Returns:
         bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
@@ -983,6 +994,7 @@ def core_create(
         function_name=tuple(functions),
         output_format=output_format,
         output_file=output_file,
+        _update_path=_update_path,
     )
 
 
@@ -997,6 +1009,7 @@ def core_alter(
     function: Optional[str] = None,
     output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
     output_file: Optional[str | Path] = None,
+    _update_path: bool = True,
 ) -> bool:
     """
     Generates SQL migration statements for altering the database, based on the code in two given source files.
@@ -1016,6 +1029,7 @@ def core_alter(
              If None, the function will use 'define_tables'.
         output_format: defaults to just SQL, edwh-migrate migration syntax also supported
         output_file: append the output to a file instead of printing it?
+        _update_path: try adding cwd to PYTHONPATH if failing?
 
     Returns:
         bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
