@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.8 (2024-07-04)
+
+### Fix
+
+* Update PYTHONPATH for local imports, which could help some cases ([`6c5fb17`](https://github.com/robinvandernoord/pydal2sql-core/commit/6c5fb17b5594ff68a375d29a48debb165af02e83))
+
 ## v0.3.7 (2024-05-01)
 
 ### Fix
