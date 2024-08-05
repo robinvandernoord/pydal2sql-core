@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.4.0 (2024-08-05)
+
+### Feature
+
+* Add core_stub functionality to generate a stub migration ([`cdfa7f2`](https://github.com/robinvandernoord/pydal2sql-core/commit/cdfa7f237b6e97de0f350a104ebb67937ec259e8))
+
 ## v0.3.8 (2024-07-04)
 
 ### Fix
