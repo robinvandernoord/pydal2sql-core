@@ -1,7 +1,10 @@
+import io
+
 import pydal
 import pytest
 from pydal import DAL, Field
-
+import datetime as dt
+from pydal2sql_core.cli_support import core_stub
 from src.pydal2sql_core import (
     SUPPORTED_DATABASE_TYPES,
     core_alter,
@@ -156,3 +159,56 @@ def test_guess_db_type():
     "id" INTEGER PRIMARY KEY AUTOINCREMENT
 );""".strip()
         )
+
+
+def test_core_stub_vanilla():
+    output_file = io.StringIO()
+    core_stub("my_unique_migration_name", output_format="default", output_file=output_file)
+    output_file.seek(0)
+    output_contents = output_file.read()
+
+    assert "-- my_unique_migration_name" in output_contents
+
+    assert "def " not in output_contents
+    assert ": DAL" not in output_contents
+    assert ": TypeDAL" not in output_contents
+
+
+def test_core_stub_dry():
+    output_file = io.StringIO()
+    core_stub("my_unique_migration_name", output_format="default", output_file=output_file, dry_run=True)
+    output_file.seek(0)
+    output_contents = output_file.read()
+    assert not output_contents
+
+
+def test_core_stub_pydal():
+    output_file = io.StringIO()
+    core_stub("my_unique_migration_name", output_format="edwh-migrate", output_file=output_file, is_typedal=False)
+    output_file.seek(0)
+    output_contents = output_file.read()
+
+    assert "my_unique_migration_name" in output_contents
+    datetime = dt.datetime.utcnow()
+    date = datetime.strftime("%Y%m%d")
+    assert f"_{date}" in output_contents
+    assert f"_001" in output_contents
+
+    assert ": DAL" in output_contents
+    assert ": TypeDAL" not in output_contents
+
+
+def test_core_stub_typedal():
+    output_file = io.StringIO()
+    core_stub("my_unique_migration_name", output_format="edwh-migrate", output_file=output_file, is_typedal=True)
+    output_file.seek(0)
+    output_contents = output_file.read()
+
+    assert "my_unique_migration_name" in output_contents
+    datetime = dt.datetime.utcnow()
+    date = datetime.strftime("%Y%m%d")
+    assert f"_{date}" in output_contents
+    assert f"_001" in output_contents
+
+    assert ": DAL" not in output_contents
+    assert ": TypeDAL" in output_contents

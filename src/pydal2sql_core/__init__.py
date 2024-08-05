@@ -6,7 +6,7 @@ Expose methods for the library.
 #
 # SPDX-License-Identifier: MIT
 
-from .cli_support import core_alter, core_create, handle_cli
+from .cli_support import core_alter, core_create, core_stub, handle_cli
 from .core import generate_sql
 from .helpers import get_typing_args
 from .types import SUPPORTED_DATABASE_TYPES as _SUPPORTED_DATABASE_TYPES
@@ -18,6 +18,7 @@ __all__ = [
     "SUPPORTED_DATABASE_TYPES",
     "core_create",
     "core_alter",
+    "core_stub",
     "handle_cli",
     "get_typing_args",
 ]

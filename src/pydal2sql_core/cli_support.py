@@ -525,7 +525,7 @@ for table in tables:
     """
 
 
-def sql_to_function_name(sql_statement: str) -> str:
+def sql_to_function_name(sql_statement: str, default: Optional[str] = None) -> str:
     """
     Extract action (CREATE, ALTER, DROP) and table name from the SQL statement.
     """
@@ -533,7 +533,7 @@ def sql_to_function_name(sql_statement: str) -> str:
 
     if not match:
         # raise ValueError("Invalid SQL statement. Unable to extract action and table name.")
-        return "unknown_migration"
+        return default or "unknown_migration"
 
     action, table_name = match[0]
 
@@ -557,8 +557,10 @@ def _setup_generic_edwh_migrate(file: Path, is_typedal: bool) -> None:
 START_RE = re.compile(r"-- start\s+\w+\s--\n")
 
 
-def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional[str] = None) -> str:
-    sql_func_name = sql_to_function_name(contents)
+def _build_edwh_migration(
+    contents: str, cls: str, date: str, existing: Optional[str] = None, default_migration_name: Optional[str] = None
+) -> str:
+    sql_func_name = sql_to_function_name(contents, default=default_migration_name)
     func_name = "_placeholder_"
     contents = START_RE.sub("", contents)
 
@@ -569,7 +571,7 @@ def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional
             if contents.replace(" ", "").replace("\n", "") in existing.replace(" ", "").replace("\n", ""):
                 rich.print(f"[yellow] migration {func_name} already exists, skipping! [/yellow]")
                 return ""
-            elif func_name.startswith("alter"):
+            elif func_name.startswith(("alter", default_migration_name or "unknown")):
                 # bump number because alter migrations are different
                 continue
             else:
@@ -602,14 +604,16 @@ def _build_edwh_migration(contents: str, cls: str, date: str, existing: Optional
     )
 
 
-def _build_edwh_migrations(contents: str, is_typedal: bool, output: Optional[Path] = None) -> str:
+def _build_edwh_migrations(
+    contents: str, is_typedal: bool, output: Optional[Path] = None, default_migration_name: Optional[str] = None
+) -> str:
     cls = "TypeDAL" if is_typedal else "DAL"
     date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
 
     existing = output.read_text() if output and output.exists() else None
 
     return "".join(
-        _build_edwh_migration(migration, cls, date, existing)
+        _build_edwh_migration(migration, cls, date, existing, default_migration_name=default_migration_name)
         for migration in contents.split("-- END OF MIGRATION --")
         if migration.strip()
     )
@@ -620,7 +624,27 @@ def _handle_output(
     output_file: Path | str | io.StringIO | None,
     output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
     is_typedal: bool = False,
+    default_migration_name: Optional[str] = None,
 ) -> None:
+    """
+    Handle generated migration code (e.g. core_create, core_alter or core_stub).
+
+    Args:
+        file (io.StringIO): The file-like object containing the migration content.
+        output_file (Union[Path, str, io.StringIO, None]): The file to which the migration content should be written.
+            If None, the content will be printed to stdout. If the string is '-', it will also be printed to stdout.
+        output_format (edwh-migrate, default): The format in which to output the migration.
+            Defaults to 'default'.
+        is_typedal (bool): If True, the migration content will be formatted for Typedal. Defaults to False (= pydal).
+                           Only relevant for edwh-migrate format.
+        default_migration_name (Optional[str]): The default migration name used in the output content. Defaults to None.
+
+    Raises:
+        ValueError: If the provided output_format is unknown.
+
+    This function reads the migration content from the provided file-like object, formats it according to the specified
+    output format, and writes it to the specified output file or stdout.
+    """
     file.seek(0)
     contents = file.read()
 
@@ -629,7 +653,12 @@ def _handle_output(
         output_file = None if output_file == "-" else Path(output_file)
 
     if output_format == "edwh-migrate":
-        contents = _build_edwh_migrations(contents, is_typedal, output_file if isinstance(output_file, Path) else None)
+        contents = _build_edwh_migrations(
+            contents,
+            is_typedal,
+            output_file if isinstance(output_file, Path) else None,
+            default_migration_name=default_migration_name,
+        )
     elif output_format in {"default", "sql"} or not output_format:
         contents = "\n".join(contents.split("-- END OF MIGRATION --"))
     else:
@@ -1111,3 +1140,51 @@ def core_alter(
         output_format=output_format,
         output_file=output_file,
     )
+
+
+def core_stub(
+    migration_name: str,
+    output_format: Optional[SUPPORTED_OUTPUT_FORMATS] = DEFAULT_OUTPUT_FORMAT,
+    output_file: Optional[str | Path | io.StringIO] = None,
+    dry_run: bool = False,
+    is_typedal: bool = False,
+) -> bool:
+    """
+    Generate a dummy migration.
+
+    Args:
+        migration_name (str): The name of the migration.
+        output_format: The format in which to output the migration (edwh-migrate, default).
+            Defaults to "default".
+        output_file: The file to which the migration should be output.
+            If None, the migration will be printed to stdout. Defaults to None.
+        dry_run (bool): If True, the migration will not be executed and will only be printed to stdout.
+            Defaults to False.
+        is_typedal (bool): If True, the migration will be generated for Typedal.
+                           Defaults to False, which will generate the migration for pydal.
+                           Only relevant if output_format=edwh-migrate
+
+    Returns:
+        bool: True if SQL migration statements are generated and (if not in noop mode) executed successfully,
+              False otherwise.
+
+    Example:
+        >>> core_stub("some_change", output_format="sql", output_file="migration.sql", dry_run=False, is_typedal=False)
+        True
+
+    This function is mostly useful for usage with output_format='edwh-migrate'.
+    If `dry_run` is True, the migration will only be printed to stdout and not executed.
+    """
+    if dry_run:
+        # None will print it to stdout
+        output_file = None
+
+    _handle_output(
+        io.StringIO(f"-- {migration_name}\n"),
+        output_file,
+        output_format=output_format,
+        is_typedal=is_typedal,
+        default_migration_name=migration_name,
+    )
+
+    return True
