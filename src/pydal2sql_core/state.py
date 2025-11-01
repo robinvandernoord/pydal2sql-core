@@ -182,7 +182,7 @@ class Config(AbstractConfig):
     """
 
     # settings go here
-    db_type: typing.Optional[SUPPORTED_DATABASE_TYPES_WITH_ALIASES] = postpone()
+    db_type: typing.Optional[SUPPORTED_DATABASE_TYPES_WITH_ALIASES] = None
     tables: Optional[list[str]] = None
     magic: bool = False
     function: str = "define_tables"
