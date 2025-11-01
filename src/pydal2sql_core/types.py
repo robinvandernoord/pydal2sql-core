@@ -32,6 +32,18 @@ class SQLAdapter(_SQLAdapter):  # type: ignore
 empty = Empty()
 
 
+class UniversalSet(dict):
+    def __contains__(self, _) -> bool:
+        return True
+
+    def __getitem__(self, item):
+        try:
+            return super().__getitem__(item)
+        except KeyError:
+            # e.g. for mapping `timestamp` as special field type
+            return item
+
+
 class CustomAdapter(SQLAdapter):
     """
     Adapter that prevents actual queries.
@@ -39,18 +51,29 @@ class CustomAdapter(SQLAdapter):
 
     drivers = ("sqlite3",)
 
+    def _log_attempt(self):
+        from .state import state
+
+        if state.verbosity > 2:
+            warnings.warn("Prevented attempt to execute query while migrating.")
+
+    @property
+    def types(self):
+        # special type that ensures 'x in types' is always true
+        return UniversalSet(super().types)
+
     def id_query(self, _: Any) -> Empty:  # pragma: no cover
         """
         Normally generates table._id != None.
         """
-        warnings.warn("Prevented attempt to execute query while migrating.")
+        self._log_attempt()
         return empty
 
     def execute(self, *_: Any, **__: Any) -> Empty:
         """
         Normally executes an SQL query on the adapter.
         """
-        warnings.warn("Prevented attempt to execute query while migrating.")
+        self._log_attempt()
         return empty
 
     @property
@@ -58,7 +81,7 @@ class CustomAdapter(SQLAdapter):
         """
         Trying to connect to the database.
         """
-        warnings.warn("Prevented attempt to execute query while migrating.")
+        self._log_attempt()
         return empty
 
 

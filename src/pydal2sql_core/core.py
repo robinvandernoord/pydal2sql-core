@@ -26,6 +26,7 @@ from .types import (
     CustomAdapter,
     DummyDAL,
     SQLAdapter,
+    UniversalSet,
 )
 
 
@@ -127,11 +128,16 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
     sql_dialect = dialects_per_database[driver_name]
 
     class DummyAdapter(CustomAdapter):
-        types = adapter_cls.types
         driver = installed_driver
         dbengine = adapter_cls.dbengine
+        _types = adapter_cls.types
 
         commit_on_alter_table = True
+
+        @property
+        def types(self):
+            # special type that ensures 'x in types' is always true
+            return UniversalSet(self._types)
 
     adapter = DummyAdapter(db, "", adapter_args={"driver": installed_driver})
 
