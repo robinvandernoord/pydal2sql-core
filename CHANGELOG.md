@@ -2,6 +2,18 @@
 
 <!--next-version-placeholder-->
 
+## v0.5.0 (2025-11-01)
+
+### Feature
+
+* **helpers:** Add detect_typedal() to identify TypeDAL imports ([`60af2b6`](https://github.com/robinvandernoord/pydal2sql-core/commit/60af2b6c0fca1961a2ab7bde7838d9f0576eea26))
+* **cli:** Print traceback when verbosity >2 on migration errors ([`9faa303`](https://github.com/robinvandernoord/pydal2sql-core/commit/9faa30381068d01ca53670f43cc8108182237456))
+
+### Fix
+
+* **types:** Allow unmapped SQL types via UniversalSet to prevent type rejections ([`8db7944`](https://github.com/robinvandernoord/pydal2sql-core/commit/8db7944de6a59dfc68bf0d803d310481008f2cc9))
+* Reuse typedal's `evaluate_forward_reference` logic which deals with differences in Python versions ([`6b7dae3`](https://github.com/robinvandernoord/pydal2sql-core/commit/6b7dae3c526014868e5f352996482c9aafc39292))
+
 ## v0.4.0 (2024-08-05)
 
 ### Feature
