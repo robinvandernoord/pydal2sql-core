@@ -39,7 +39,7 @@ from witchery import (
 
 from pydal2sql_core.state import state
 
-from .helpers import excl, flatten, uniq, detect_typedal
+from .helpers import detect_typedal, excl, flatten, uniq
 from .types import (
     _SUPPORTED_OUTPUT_FORMATS,
     DEFAULT_OUTPUT_FORMAT,
@@ -665,7 +665,7 @@ def _handle_output(
         contents = "\n".join(contents.split("-- END OF MIGRATION --"))
     else:
         raise ValueError(
-            f"Unknown format {output_format}. " f"Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}"
+            f"Unknown format {output_format}. Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}"
         )
 
     if isinstance(output_file, Path):
