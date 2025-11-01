@@ -946,6 +946,8 @@ def handle_cli(
             rich.print(
                 f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'} ({type(err)})", file=sys.stderr
             )
+            if state.verbosity > 2:
+                traceback.print_tb(err.__traceback__)
             return False
 
     # idk when this would happen, but something definitely went wrong here:
