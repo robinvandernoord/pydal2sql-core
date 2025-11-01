@@ -7,6 +7,7 @@ import types
 import typing
 from contextlib import contextmanager
 from pathlib import Path
+from typedal.core import evaluate_forward_reference
 
 T = typing.TypeVar("T", bound=typing.Any)
 Recurse = typing.Union[T, typing.Iterable["Recurse[T]"]]
@@ -58,7 +59,7 @@ def _get_typing_args_recursive(some: ANY_TYPE) -> list[type]:
     if isinstance(some, typing.ForwardRef):
         return [
             # ForwardRef<str> -> str
-            some._evaluate(globals(), locals(), set())
+            evaluate_forward_reference(some)
         ]
 
     return [typing.cast(type, some)]

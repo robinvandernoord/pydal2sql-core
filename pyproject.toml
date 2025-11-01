@@ -24,6 +24,7 @@ dependencies = [
     "black",
     "GitPython",
     "witchery >= 0.2.0",
+    "TypeDAL",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,6 @@ dev = [
     "psycopg2-binary",
     "pymysql",
     "contextlib_chdir",
-    "TypeDAL",
 ]
 
 typedal = [
@@ -44,7 +44,6 @@ typedal = [
 all = [
     "psycopg2-binary",
     "pymysql",
-    "TypeDAL",
 ]
 
 psql = [
