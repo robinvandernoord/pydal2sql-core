@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.5.1 (2025-11-01)
+
+### Fix
+
+* Set default db type to None instead of `postpone` ([`a9924ca`](https://github.com/robinvandernoord/pydal2sql-core/commit/a9924caf49d098e21e1f1c30d9bcb767af988a92))
+
 ## v0.5.0 (2025-11-01)
 
 ### Feature
