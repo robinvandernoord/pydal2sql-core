@@ -1,9 +1,11 @@
+import datetime as dt
 import io
 
 import pydal
 import pytest
 from pydal import DAL, Field
-import datetime as dt
+from typedal.helpers import utcnow
+
 from pydal2sql_core.cli_support import core_stub
 from src.pydal2sql_core import (
     SUPPORTED_DATABASE_TYPES,
@@ -205,7 +207,7 @@ def test_core_stub_typedal():
     output_contents = output_file.read()
 
     assert "my_unique_migration_name" in output_contents
-    datetime = dt.datetime.utcnow()
+    datetime = utcnow()
     date = datetime.strftime("%Y%m%d")
     assert f"_{date}" in output_contents
     assert f"_001" in output_contents

@@ -478,7 +478,7 @@ def test_core_alter():
 def fake_stdin(data: str):
     _stdin = sys.stdin
     try:
-        with tempfile.NamedTemporaryFile(mode='w+t') as tmp:
+        with tempfile.NamedTemporaryFile(mode="w+t") as tmp:
             tmp.write(data)
             tmp.seek(0)
             sys.stdin = tmp
