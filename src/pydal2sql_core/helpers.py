@@ -7,6 +7,8 @@ import types
 import typing
 from contextlib import contextmanager
 from pathlib import Path
+
+import witchery
 from typedal.core import evaluate_forward_reference
 
 T = typing.TypeVar("T", bound=typing.Any)
@@ -112,3 +114,10 @@ def TempdirOrExistingDir(folder_path: typing.Optional[str | Path] = None) -> typ
         yield str(folder_path)
     else:
         yield folder_path
+
+
+def detect_typedal(code: str):
+    """
+    Check if TypeDAL is imported somewhere in the code.
+    """
+    return "typedal" in witchery.find_imported_modules(code)

@@ -37,7 +37,9 @@ from witchery import (
     remove_specific_variables,
 )
 
-from .helpers import excl, flatten, uniq
+from pydal2sql_core.state import state
+
+from .helpers import excl, flatten, uniq, detect_typedal
 from .types import (
     _SUPPORTED_OUTPUT_FORMATS,
     DEFAULT_OUTPUT_FORMAT,
@@ -758,9 +760,8 @@ def handle_cli(
     Returns:
         bool: True if SQL migration statements are generated and executed successfully, False otherwise.
     """
-    # todo: better typedal checking
     if use_typedal == "auto":
-        use_typedal = "typedal" in code_before.lower() or "typedal" in code_after.lower()
+        use_typedal = detect_typedal(code_before) or detect_typedal(code_after)
 
     if function_name:
         define_table_functions: set[str] = set(function_name) if isinstance(function_name, tuple) else {function_name}

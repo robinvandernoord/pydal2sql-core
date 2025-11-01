@@ -23,7 +23,7 @@ dependencies = [
     "pydal",
     "black",
     "GitPython",
-    "witchery >= 0.2.0",
+    "witchery >= 0.3.0",
     "TypeDAL",
 ]
 
