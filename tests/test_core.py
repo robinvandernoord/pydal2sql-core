@@ -191,7 +191,7 @@ def test_core_stub_pydal():
     output_contents = output_file.read()
 
     assert "my_unique_migration_name" in output_contents
-    datetime = dt.datetime.utcnow()
+    datetime = utcnow()
     date = datetime.strftime("%Y%m%d")
     assert f"_{date}" in output_contents
     assert f"_001" in output_contents
