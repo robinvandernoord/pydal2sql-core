@@ -837,14 +837,25 @@ def render_schema_from_code(
 
     extra_code = ""
 
-    generated_code = to_execute.substitute(
-        {
-            "tables": flatten(tables or []),
-            "code_before": textwrap.dedent(code_before),
-            "code_after": textwrap.dedent(code_after),
-            "extra": extra_code,
-        },
-    )
+    def _render_exec_code(_code_before: str, _code_after: str, _extra: str) -> str:
+        generated = to_execute.substitute(
+            {
+                "tables": flatten(tables or []),
+                "code_before": textwrap.dedent(_code_before),
+                "code_after": textwrap.dedent(_code_after),
+                "extra": textwrap.dedent(_extra),
+            },
+        )
+
+        # Function-defined tables (e.g. define_tables/define_td_tables) should be executed
+        # regardless of whether an explicit --tables filter is provided.
+        for _function_name in define_table_functions:
+            if find_function_to_call(generated, _function_name) is not None:
+                generated = add_function_call(generated, _function_name, multiple=True)
+
+        return generated
+
+    generated_code = _render_exec_code(code_before, code_after, extra_code)
     if verbose or noop:
         rich.print(generated_code, file=sys.stderr)
 
@@ -902,22 +913,6 @@ def render_schema_from_code(
                 rich.print(f"[yellow]{e}[/yellow]", file=sys.stderr)
                 return False
 
-            if define_table_functions:
-                any_found = False
-                for function_name in define_table_functions:
-                    define_tables = find_function_to_call(generated_code, function_name)
-
-                    # if define_tables function is found, add call to it at end of code
-                    if define_tables is not None:
-                        generated_code = add_function_call(generated_code, function_name, multiple=True)
-                        any_found = True
-
-                if any_found:
-                    # hurray!
-                    continue
-
-            # else: no define_tables or other method to use found.
-
             print(f"No tables found in the top-level or {function_name} function!", file=sys.stderr)
             if use_typedal:
                 print(
@@ -955,14 +950,7 @@ def render_schema_from_code(
             code_before = remove_if_falsey_blocks(code_before)
             code_after = remove_if_falsey_blocks(code_after)
 
-            generated_code = to_execute.substitute(
-                {
-                    "tables": flatten(tables or []),
-                    "extra": textwrap.dedent(extra_code),
-                    "code_before": textwrap.dedent(code_before),
-                    "code_after": textwrap.dedent(code_after),
-                },
-            )
+            generated_code = _render_exec_code(code_before, code_after, extra_code)
         except ImportError as e:
             # should include ModuleNotFoundError
             err = e
@@ -976,14 +964,7 @@ def render_schema_from_code(
                 code_before = code_before.replace(to_remove, "\n")
                 code_after = code_after.replace(to_remove, "\n")
 
-            generated_code = to_execute.substitute(
-                {
-                    "tables": flatten(tables or []),
-                    "extra": textwrap.dedent(extra_code),
-                    "code_before": textwrap.dedent(code_before),
-                    "code_after": textwrap.dedent(code_after),
-                },
-            )
+            generated_code = _render_exec_code(code_before, code_after, extra_code)
 
         except KeyError as e:
             err = e
@@ -991,14 +972,7 @@ def render_schema_from_code(
             special_tables.add(table_name)
             extra_code = extra_code + "\n" + textwrap.dedent(table_definition)
 
-            generated_code = to_execute.substitute(
-                {
-                    "tables": flatten(tables or []),
-                    "extra": textwrap.dedent(extra_code),
-                    "code_before": textwrap.dedent(code_before),
-                    "code_after": textwrap.dedent(code_after),
-                },
-            )
+            generated_code = _render_exec_code(code_before, code_after, extra_code)
         except Exception as e:
             err = e
             # otherwise: give up
