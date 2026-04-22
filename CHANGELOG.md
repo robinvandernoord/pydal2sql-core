@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.7.2 (2026-04-22)
+
+### Fix
+
+* `render_schema_from_code`: pass write mode (w/a) to Path.write ([`c258473`](https://github.com/robinvandernoord/pydal2sql-core/commit/c258473a9e1008f7c50410d56f34a70b44d30bd8))
+
 ## v0.7.1 (2026-04-22)
 
 ### Fix
