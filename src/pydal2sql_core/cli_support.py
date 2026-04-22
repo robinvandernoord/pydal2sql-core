@@ -725,10 +725,15 @@ def try_format_and_write_sql_output(
         return False
 
 
+WriteMode = typing.Literal["a", "w"]
+DEFAULT_WRITEMODE: WriteMode = "a"
+
+
 def _write_output(
     contents: str,
     output_file: Path | str | io.StringIO | None,
     output_description: str = "output",
+    mode: WriteMode = DEFAULT_WRITEMODE,
 ) -> bool:
     """
     Write already-rendered output to destination.
@@ -738,7 +743,7 @@ def _write_output(
 
     if isinstance(output_file, Path):
         if contents.strip():
-            with output_file.open("a") as f:
+            with output_file.open(mode) as f:
                 f.write(contents)
 
             rich.print(f"[green] Written {output_description} to {output_file} [/green]")
@@ -797,6 +802,7 @@ def render_schema_from_code(
     magic: bool = False,
     function_name: Optional[str | tuple[str, ...]] = "define_tables",
     use_typedal: bool = False,
+    write_mode: WriteMode = DEFAULT_WRITEMODE,
     code_before: str = "",
     _update_path: bool = True,
 ) -> bool:
@@ -811,6 +817,7 @@ def render_schema_from_code(
         tables: Explicit table selection.
         verbose: Print generated execution code to stderr.
         noop: Only print generated execution code, skip execution.
+        write_mode: a for append (default), w for overwrite
         magic: Automatically inject missing names/import fallbacks.
         function_name: Optional function(s) to call when no top-level tables are found.
         use_typedal: Use TypeDAL execution template (`True`), pydal (`False`), or auto-detect.
@@ -906,7 +913,7 @@ def render_schema_from_code(
                 is_alter=bool(code_before.strip()),
             )
             rendered = renderer(context)
-            _write_output(rendered, output_file)
+            _write_output(rendered, output_file, mode=write_mode)
             return True  # success!
         except ValueError as e:
             if str(e) != "no-tables-found":  # pragma: no cover
@@ -1026,6 +1033,7 @@ def handle_cli(
         magic=magic,
         function_name=function_name,
         use_typedal=is_typedal,
+        write_mode="w",
         _update_path=_update_path,
     )
     if not success:
