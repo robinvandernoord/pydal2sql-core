@@ -877,6 +877,7 @@ def render_schema_from_code(
                 DummyTypeDAL if use_typedal else DummyDAL
             )  # <- use a fake DAL that doesn't actually run queries
             catch["_special_tables"] = special_tables  # <- e.g. typedal_cache, auth_user
+            catch["db_type"] = db_type or ""  # allow source code to override db_type during exec
             # note: when adding something to 'catch', also add it to magic_vars!!!
 
             catch["_uniq"] = uniq  # function to make a list unique without changing order
@@ -888,7 +889,7 @@ def render_schema_from_code(
                 db_old=typing.cast(DummyDAL, catch["db_old"]),
                 db_new=typing.cast(DummyDAL, catch["db_new"]),
                 tables=list(catch["_tables"]),
-                db_type=db_type,
+                db_type=catch.get("db_type", db_type),
                 use_typedal=use_typedal,
                 is_create=not bool(code_before.strip()),
                 is_alter=bool(code_before.strip()),
