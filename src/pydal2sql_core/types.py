@@ -51,7 +51,7 @@ class CustomAdapter(SQLAdapter):
 
     drivers = ("sqlite3",)
 
-    def _log_attempt(self):
+    def _log_attempt(self) -> None:
         from .state import state
 
         if state.verbosity > 2:

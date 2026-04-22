@@ -1067,6 +1067,79 @@ def handle_cli(
     )
 
 
+def find_file_contents(
+    filename: Optional[str] = None,
+    function: Optional[str | tuple[str, ...]] = None,
+    prompt_description="table definition",
+    found_functions: list[str] | None = None,
+    default_version: str = "stdin",
+    file_version: Optional[str] = None,
+    git_root: Optional[Path] = None,
+    with_git: bool = True,
+) -> str:
+    """
+    Resolve a source file spec and return its contents.
+
+    Supports:
+    - `<path>`
+    - `<path>:<function>`
+    - `<path>@<git-ref>`
+    - `-` / stdin
+
+    Args:
+        filename: File path (optionally including `:<function>` or `@<git-ref>`).
+        function: Optional function name(s) to merge with any `:<function>` from `filename`.
+        prompt_description: Description shown when reading from stdin.
+        found_functions: Optional mutable list that receives discovered function names.
+        default_version: Default version when `filename` has no `@<git-ref>`.
+        file_version: Explicit file version. When provided, `filename` is treated as a plain path.
+        git_root: Optional git root for path resolution.
+        with_git: Whether `@<git-ref>` lookups should use git history.
+
+    Returns:
+        The loaded source code.
+
+    Raises:
+        FileNotFoundError: If the resolved source file does not exist.
+    """
+    if git_root is None:
+        git_root = find_git_root(filename) or find_git_root() or Path(os.getcwd())
+
+    functions: set[str] = set()
+    if function:  # pragma: no cover
+        if isinstance(function, tuple):
+            functions.update(function)
+        else:
+            functions.add(function)
+
+    if filename and ":" in filename:
+        # e.g. models.py:define_tables
+        filename, _function = filename.split(":", 1)
+        functions.add(_function)
+
+    if file_version is None:
+        file_version, file_path = extract_file_version_and_path(
+            filename,
+            default_version=default_version,
+        )
+    else:
+        file_path = filename
+    file_exists, file_absolute_path = get_absolute_path_info(file_path, file_version, git_root)
+
+    if not file_exists:
+        raise FileNotFoundError(f"Source file {filename} could not be found.")
+
+    if found_functions is not None:
+        found_functions.extend(functions)
+
+    return get_file_for_version(
+        file_absolute_path,
+        file_version,
+        prompt_description=prompt_description,
+        with_git=with_git,
+    )
+
+
 def core_create(
     filename: Optional[str] = None,
     tables: Optional[list[str]] = None,
@@ -1103,30 +1176,13 @@ def core_create(
     Raises:
         ValueError: If the source file cannot be found or if no tables could be found in the code.
     """
-    git_root = find_git_root() or Path(os.getcwd())
-
-    functions: set[str] = set()
-    if function:  # pragma: no cover
-        if isinstance(function, tuple):
-            functions.update(function)
-        else:
-            functions.add(function)
-
-    if filename and ":" in filename:
-        # e.g. models.py:define_tables
-        filename, _function = filename.split(":", 1)
-        functions.add(_function)
-
-    file_version, file_path = extract_file_version_and_path(
+    mut_functions = []
+    text = find_file_contents(
         filename,
+        function,
+        found_functions=mut_functions,
         default_version="current" if filename else "stdin",
     )
-    file_exists, file_absolute_path = get_absolute_path_info(file_path, file_version, git_root)
-
-    if not file_exists:
-        raise FileNotFoundError(f"Source file {filename} could not be found.")
-
-    text = get_file_for_version(file_absolute_path, file_version, prompt_description="table definition")
 
     return handle_cli(
         "",
@@ -1136,7 +1192,7 @@ def core_create(
         verbose=verbose,
         noop=noop,
         magic=magic,
-        function_name=tuple(functions),
+        function_name=tuple(mut_functions),
         output_format=output_format,
         output_file=output_file,
         _update_path=_update_path,
@@ -1207,8 +1263,8 @@ def core_alter(
 
     # either ./file exists or /file exists (seen from git root):
 
-    before_exists, before_absolute_path = get_absolute_path_info(filename_before, version_before, git_root)
-    after_exists, after_absolute_path = get_absolute_path_info(filename_after, version_after, git_root)
+    before_exists, _ = get_absolute_path_info(filename_before, version_before, git_root)
+    after_exists, _ = get_absolute_path_info(filename_after, version_after, git_root)
 
     if not (before_exists and after_exists):
         message = ""
@@ -1218,16 +1274,18 @@ def core_alter(
         raise FileNotFoundError(message)
 
     try:
-        code_before = get_file_for_version(
-            before_absolute_path,
-            version_before,
+        code_before = find_file_contents(
+            filename_before,
             prompt_description="current table definition",
+            file_version=version_before,
+            git_root=git_root,
             with_git=git_root is not None,
         )
-        code_after = get_file_for_version(
-            after_absolute_path,
-            version_after,
+        code_after = find_file_contents(
+            filename_after,
             prompt_description="desired table definition",
+            file_version=version_after,
+            git_root=git_root,
             with_git=git_root is not None,
         )
 
