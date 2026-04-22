@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.7.1 (2026-04-22)
+
+### Fix
+
+* **cli:** Always run schema definition functions when tables filter is provided ([`b99c184`](https://github.com/robinvandernoord/pydal2sql-core/commit/b99c18467afb5c225eedb4cddd166f6103bddb7f))
+
 ## v0.7.0 (2026-04-22)
 
 ### Feature
