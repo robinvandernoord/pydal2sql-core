@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.7.0 (2026-04-22)
+
+### Feature
+
+* Extract reusable `find_file_contents` ([`4a1832b`](https://github.com/robinvandernoord/pydal2sql-core/commit/4a1832b6220da3aa57da83b8bfa366454a8bb2b5))
+
 ## v0.6.1 (2026-04-22)
 
 ### Fix
