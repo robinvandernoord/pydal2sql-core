@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.6.1 (2026-04-22)
+
+### Fix
+
+* Support setting `db_type` from code again ([`d9cf38a`](https://github.com/robinvandernoord/pydal2sql-core/commit/d9cf38a234b5c51a3d15adf343e9e4ada220b68c))
+
 ## v0.6.0 (2026-04-22)
 
 ### Feature
