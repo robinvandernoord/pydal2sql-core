@@ -143,9 +143,8 @@ def test_alter():
 
 
 def test_invalid_dbtype():
-    with pytest.raises(ValueError):
-        with TempdirOrExistingDir() as temp_dir:
-            _build_dummy_migrator("magicdb", db_folder=temp_dir)
+    with pytest.raises(ValueError), TempdirOrExistingDir() as temp_dir:
+        _build_dummy_migrator("magicdb", db_folder=temp_dir)
 
 
 def test_guess_db_type():
@@ -194,7 +193,7 @@ def test_core_stub_pydal():
     datetime = utcnow()
     date = datetime.strftime("%Y%m%d")
     assert f"_{date}" in output_contents
-    assert f"_001" in output_contents
+    assert "_001" in output_contents
 
     assert ": DAL" in output_contents
     assert ": TypeDAL" not in output_contents
@@ -210,7 +209,7 @@ def test_core_stub_typedal():
     datetime = utcnow()
     date = datetime.strftime("%Y%m%d")
     assert f"_{date}" in output_contents
-    assert f"_001" in output_contents
+    assert "_001" in output_contents
 
     assert ": DAL" not in output_contents
     assert ": TypeDAL" in output_contents

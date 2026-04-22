@@ -13,6 +13,7 @@ import sys
 import textwrap
 import traceback
 import typing
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -37,9 +38,9 @@ from witchery import (
     remove_specific_variables,
 )
 
-from pydal2sql_core.state import state
-
+from .core import generate_sql
 from .helpers import detect_typedal, excl, flatten, uniq
+from .state import state
 from .types import (
     _SUPPORTED_OUTPUT_FORMATS,
     DEFAULT_OUTPUT_FORMAT,
@@ -48,6 +49,8 @@ from .types import (
     DummyDAL,
     DummyTypeDAL,
 )
+
+IMPORT_IN_STR = re.compile(r'File "<string>", line (\d+), in <module>')
 
 
 def has_stdin_data() -> bool:  # pragma: no cover
@@ -68,7 +71,7 @@ def has_stdin_data() -> bool:  # pragma: no cover
             [],
             [],
             0.0,
-        )[0]
+        )[0],
     )
 
 
@@ -242,7 +245,8 @@ def get_file_for_version(filename: str, version: str, prompt_description: str = 
 
 
 def extract_file_version_and_path(
-    file_path_or_git_tag: Optional[str], default_version: str = "stdin"
+    file_path_or_git_tag: Optional[str],
+    default_version: str = "stdin",
 ) -> tuple[str, str | None]:
     """
     Extract the file version and path from the given input.
@@ -282,7 +286,8 @@ def extract_file_version_and_path(
 
 
 def extract_file_versions_and_paths(
-    filename_before: Optional[str], filename_after: Optional[str]
+    filename_before: Optional[str],
+    filename_after: Optional[str],
 ) -> tuple[tuple[str, str | None], tuple[str, str | None]]:
     """
     Extract the file versions and paths based on the before and after filenames.
@@ -385,7 +390,9 @@ def check_indentation(code: str, fix: bool = False) -> str:
 
 
 def ensure_no_migrate_on_real_db(
-    code: str, db_names: typing.Iterable[str] = ("db", "database"), fix: bool = False
+    code: str,
+    db_names: typing.Iterable[str] = ("db", "database"),
+    fix: bool = False,
 ) -> str:
     """
     Ensure that the code does not contain actual migrations on a real database.
@@ -421,7 +428,7 @@ def ensure_no_migrate_on_real_db(
             var = ", ".join(found_variables)
             message = f"Variables {var} defined in code! "
         raise ValueError(
-            f"{message} Please remove this or use --magic to prevent performing actual migrations on your database."
+            f"{message} Please remove this or use --magic to prevent performing actual migrations on your database.",
         )
 
     if has_local_imports(code):
@@ -435,21 +442,35 @@ def ensure_no_migrate_on_real_db(
 
 MAX_RETRIES = 30
 
+
 # todo: overload more methods
 
-TEMPLATE_PYDAL = """
+
+@dataclass
+class RenderContext:
+    """
+    Context passed to migration renderers.
+    """
+
+    db_old: DummyDAL
+    db_new: DummyDAL
+    tables: list[str]
+    db_type: Optional[str]
+    use_typedal: bool
+    is_create: bool
+    is_alter: bool
+
+
+Renderer = typing.Callable[[RenderContext], str]
+
+TEMPLATE_EXEC_PYDAL = """
 from pydal import *
 from pydal.objects import *
 from pydal.validators import *
 
-from pydal2sql_core import generate_sql
-
-
-# from pydal import DAL
 db = database = DummyDAL(None, migrate=False)
 
 tables = $tables
-db_type = '$db_type'
 
 $extra
 
@@ -468,32 +489,18 @@ if not tables:
 
 if not tables:
     raise ValueError('no-tables-found')
-
-for table in tables:
-    print('-- start ', table, '--', file=_file)
-    if table in db_old and table in db_new:
-        print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
-    elif table in db_old:
-        print(f'DROP TABLE {table};', file=_file)
-    else:
-        print(generate_sql(db_new[table], db_type=db_type), file=_file)
-    print('-- END OF MIGRATION --', file=_file)
+_tables = tables
     """
 
-TEMPLATE_TYPEDAL = """
+TEMPLATE_EXEC_TYPEDAL = """
 from pydal import *
 from pydal.objects import *
 from pydal.validators import *
 from typedal import *
 
-from pydal2sql_core import generate_sql
-
-
-# from typedal import TypeDAL as DAL
 db = database = DummyDAL(None, migrate=False)
 
 tables = $tables
-db_type = '$db_type'
 
 $extra
 
@@ -512,19 +519,28 @@ if not tables:
 
 if not tables:
     raise ValueError('no-tables-found')
-
-
-for table in tables:
-    print('-- start ', table, '--', file=_file)
-    if table in db_old and table in db_new:
-        print(generate_sql(db_old[table], db_new[table], db_type=db_type), file=_file)
-    elif table in db_old:
-        print(f'DROP TABLE {table};', file=_file)
-    else:
-        print(generate_sql(db_new[table], db_type=db_type), file=_file)
-
-    print('-- END OF MIGRATION --', file=_file)
+_tables = tables
     """
+
+
+def default_sql_renderer(context: RenderContext) -> str:
+    """
+    Default SQL renderer used by handle_cli.
+    """
+    output = io.StringIO()
+
+    for table in context.tables:
+        print("-- start ", table, "--", file=output)
+        if table in context.db_old and table in context.db_new:
+            print(generate_sql(context.db_old[table], context.db_new[table], db_type=context.db_type), file=output)
+        elif table in context.db_old:
+            print(f"DROP TABLE {table};", file=output)
+        else:
+            print(generate_sql(context.db_new[table], db_type=context.db_type), file=output)
+        print("-- END OF MIGRATION --", file=output)
+
+    output.seek(0)
+    return output.read()
 
 
 def sql_to_function_name(sql_statement: str, default: Optional[str] = None) -> str:
@@ -560,7 +576,11 @@ START_RE = re.compile(r"-- start\s+\w+\s--\n")
 
 
 def _build_edwh_migration(
-    contents: str, cls: str, date: str, existing: Optional[str] = None, default_migration_name: Optional[str] = None
+    contents: str,
+    cls: str,
+    date: str,
+    existing: Optional[str] = None,
+    default_migration_name: Optional[str] = None,
 ) -> str:
     sql_func_name = sql_to_function_name(contents, default=default_migration_name)
     func_name = "_placeholder_"
@@ -578,7 +598,8 @@ def _build_edwh_migration(
                 continue
             else:
                 rich.print(
-                    f"[red] migration {func_name} already exists [bold]with different contents[/bold], skipping! [/red]"
+                    f"[red] migration {func_name} already exists "
+                    f"[bold]with different contents[/bold], skipping! [/red]",
                 )
                 return ""
         else:
@@ -602,12 +623,15 @@ def _build_edwh_migration(
             db.commit()
 
             return True
-        '''
+        ''',
     )
 
 
 def _build_edwh_migrations(
-    contents: str, is_typedal: bool, output: Optional[Path] = None, default_migration_name: Optional[str] = None
+    contents: str,
+    is_typedal: bool,
+    output: Optional[Path] = None,
+    default_migration_name: Optional[str] = None,
 ) -> str:
     cls = "TypeDAL" if is_typedal else "DAL"
     date = datetime.now().strftime("%Y%m%d")  # yyyymmdd
@@ -621,13 +645,13 @@ def _build_edwh_migrations(
     )
 
 
-def _handle_output(
+def _format_and_write_sql_output(
     file: io.StringIO,
     output_file: Path | str | io.StringIO | None,
     output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
     is_typedal: bool = False,
     default_migration_name: Optional[str] = None,
-) -> None:
+) -> bool:
     """
     Handle generated migration code (e.g. core_create, core_alter or core_stub).
 
@@ -665,29 +689,67 @@ def _handle_output(
         contents = "\n".join(contents.split("-- END OF MIGRATION --"))
     else:
         raise ValueError(
-            f"Unknown format {output_format}. Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}"
+            f"Unknown format {output_format}. Please choose one of {typing.get_args(_SUPPORTED_OUTPUT_FORMATS)}",
         )
 
-    if isinstance(output_file, Path):
-        if output_format == "edwh-migrate" and (not output_file.exists() or output_file.stat().st_size == 0):
-            _setup_generic_edwh_migrate(output_file, is_typedal)
+    if (
+        isinstance(output_file, Path)
+        and output_format == "edwh-migrate"
+        and (not output_file.exists() or output_file.stat().st_size == 0)
+    ):
+        _setup_generic_edwh_migrate(output_file, is_typedal)
 
+    return _write_output(contents, output_file, output_description="migration(s)")
+
+
+def try_format_and_write_sql_output(
+    file: io.StringIO,
+    output_file: Path | str | io.StringIO | None,
+    output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
+    is_typedal: bool = False,
+    default_migration_name: Optional[str] = None,
+) -> bool:
+    """
+    Safe SQL formatter/writer that returns False instead of raising on invalid format.
+    """
+    try:
+        return _format_and_write_sql_output(
+            file,
+            output_file,
+            output_format=output_format,
+            is_typedal=is_typedal,
+            default_migration_name=default_migration_name,
+        )
+    except ValueError as e:
+        rich.print(f"[yellow]{e}[/yellow]", file=sys.stderr)
+        return False
+
+
+def _write_output(
+    contents: str,
+    output_file: Path | str | io.StringIO | None,
+    output_description: str = "output",
+) -> bool:
+    """
+    Write already-rendered output to destination.
+    """
+    if isinstance(output_file, str):
+        output_file = None if output_file == "-" else Path(output_file)
+
+    if isinstance(output_file, Path):
         if contents.strip():
             with output_file.open("a") as f:
                 f.write(contents)
 
-            rich.print(f"[green] Written migration(s) to {output_file} [/green]")
+            rich.print(f"[green] Written {output_description} to {output_file} [/green]")
         else:
             rich.print(f"[yellow] Nothing to write to {output_file} [/yellow]")
-
     elif isinstance(output_file, io.StringIO):
         output_file.write(contents)
     else:
-        # no file, just print to stdout:
         print(contents.strip())
 
-
-IMPORT_IN_STR = re.compile(r'File "<string>", line (\d+), in <module>')
+    return True
 
 
 def _handle_import_error(code: str, error: ImportError) -> str:
@@ -724,51 +786,46 @@ def _handle_relation_error(error: KeyError) -> tuple[str, str]:
     )
 
 
-def handle_cli(
-    code_before: str,
+def render_schema_from_code(
     code_after: str,
+    output_file: Optional[str | Path | io.StringIO],
+    renderer: Renderer,
     db_type: Optional[str] = None,
     tables: Optional[list[str] | list[list[str]]] = None,
     verbose: bool = False,
     noop: bool = False,
     magic: bool = False,
     function_name: Optional[str | tuple[str, ...]] = "define_tables",
-    use_typedal: bool | typing.Literal["auto"] = "auto",
-    output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
-    output_file: Optional[str | Path | io.StringIO] = None,
+    use_typedal: bool = False,
+    code_before: str = "",
     _update_path: bool = True,
 ) -> bool:
     """
-    Handle user input for generating SQL migration statements based on before and after code.
+    Execute migration code and render output with a custom renderer callback.
 
     Args:
-        code_before (str): The code representing the state of the database before the change.
-        code_after (str, optional): The code representing the state of the database after the change.
-        db_type (str, optional): The type of the database (e.g., "postgres", "mysql", etc.). Defaults to None.
-        tables (list[str] or list[list[str]], optional): The list of tables to generate SQL for. Defaults to None.
-        verbose (bool, optional): If True, print the generated code. Defaults to False.
-        noop (bool, optional): If True, only print the generated code but do not execute it. Defaults to False.
-        magic (bool, optional): If True, automatically add missing variables for execution. Defaults to False.
-        function_name (str, optional): The name of the function where the tables are defined. Defaults: "define_tables".
-        use_typedal: replace pydal imports with TypeDAL?
-        output_format: defaults to just SQL, edwh-migrate migration syntax also supported
-        output_file: append the output to a file instead of printing it?
-        _update_path: try adding cwd to PYTHONPATH if failing?
-
-    # todo: prefix (e.g. public.)
+        code_before: Source code representing the initial table definitions.
+        code_after: Source code representing the desired table definitions.
+        renderer: Callback receiving RenderContext and returning final output text.
+        db_type: Optional database type hint.
+        tables: Explicit table selection.
+        verbose: Print generated execution code to stderr.
+        noop: Only print generated execution code, skip execution.
+        magic: Automatically inject missing names/import fallbacks.
+        function_name: Optional function(s) to call when no top-level tables are found.
+        use_typedal: Use TypeDAL execution template (`True`), pydal (`False`), or auto-detect.
+        output_file: Output destination (path, StringIO, stdout).
+        _update_path: Reserved for compatibility.
 
     Returns:
-        bool: True if SQL migration statements are generated and executed successfully, False otherwise.
+        bool: True on success, False on failure.
     """
-    if use_typedal == "auto":
-        use_typedal = detect_typedal(code_before) or detect_typedal(code_after)
-
     if function_name:
         define_table_functions: set[str] = set(function_name) if isinstance(function_name, tuple) else {function_name}
     else:
         define_table_functions = set()
 
-    template = TEMPLATE_TYPEDAL if use_typedal else TEMPLATE_PYDAL
+    template = TEMPLATE_EXEC_TYPEDAL if use_typedal else TEMPLATE_EXEC_PYDAL
 
     to_execute = string.Template(textwrap.dedent(template))
 
@@ -783,11 +840,10 @@ def handle_cli(
     generated_code = to_execute.substitute(
         {
             "tables": flatten(tables or []),
-            "db_type": db_type or "",
             "code_before": textwrap.dedent(code_before),
             "code_after": textwrap.dedent(code_after),
             "extra": extra_code,
-        }
+        },
     )
     if verbose or noop:
         rich.print(generated_code, file=sys.stderr)
@@ -800,7 +856,7 @@ def handle_cli(
     catch: dict[str, Any] = {}
     retry_counter = MAX_RETRIES
 
-    magic_vars = {"_file", "DummyDAL", "_special_tables", "_uniq", "_excl"}
+    magic_vars = {"DummyDAL", "_special_tables", "_uniq", "_excl"}
     special_tables: set[str] = {"typedal_cache", "typedal_cache_dependency"} if use_typedal else set()
 
     cwd = os.getcwd()
@@ -817,7 +873,6 @@ def handle_cli(
             # 'catch' is used to add and receive globals from the exec scope.
             # another argument could be added for locals, but adding simply {} changes the behavior negatively.
             # so for now, only globals is passed.
-            catch["_file"] = io.StringIO()  # <- every print should go to this file, so we can handle it afterwards
             catch["DummyDAL"] = (
                 DummyTypeDAL if use_typedal else DummyDAL
             )  # <- use a fake DAL that doesn't actually run queries
@@ -828,7 +883,18 @@ def handle_cli(
             catch["_excl"] = excl  # function to exclude items from a list
 
             exec(generated_code, catch)  # nosec: B102
-            _handle_output(catch["_file"], output_file, output_format, is_typedal=use_typedal)
+
+            context = RenderContext(
+                db_old=typing.cast(DummyDAL, catch["db_old"]),
+                db_new=typing.cast(DummyDAL, catch["db_new"]),
+                tables=list(catch["_tables"]),
+                db_type=db_type,
+                use_typedal=use_typedal,
+                is_create=not bool(code_before.strip()),
+                is_alter=bool(code_before.strip()),
+            )
+            rendered = renderer(context)
+            _write_output(rendered, output_file)
             return True  # success!
         except ValueError as e:
             if str(e) != "no-tables-found":  # pragma: no cover
@@ -891,11 +957,10 @@ def handle_cli(
             generated_code = to_execute.substitute(
                 {
                     "tables": flatten(tables or []),
-                    "db_type": db_type or "",
                     "extra": textwrap.dedent(extra_code),
                     "code_before": textwrap.dedent(code_before),
                     "code_after": textwrap.dedent(code_after),
-                }
+                },
             )
         except ImportError as e:
             # should include ModuleNotFoundError
@@ -913,11 +978,10 @@ def handle_cli(
             generated_code = to_execute.substitute(
                 {
                     "tables": flatten(tables or []),
-                    "db_type": db_type or "",
                     "extra": textwrap.dedent(extra_code),
                     "code_before": textwrap.dedent(code_before),
                     "code_after": textwrap.dedent(code_after),
-                }
+                },
             )
 
         except KeyError as e:
@@ -929,11 +993,10 @@ def handle_cli(
             generated_code = to_execute.substitute(
                 {
                     "tables": flatten(tables or []),
-                    "db_type": db_type or "",
                     "extra": textwrap.dedent(extra_code),
                     "code_before": textwrap.dedent(code_before),
                     "code_after": textwrap.dedent(code_after),
-                }
+                },
             )
         except Exception as e:
             err = e
@@ -945,7 +1008,8 @@ def handle_cli(
 
         if retry_counter < 1:  # pragma: no cover
             rich.print(
-                f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'} ({type(err)})", file=sys.stderr
+                f"[red]Code could not be fixed automagically![/red]. Error: {err or '?'} ({type(err)})",
+                file=sys.stderr,
             )
             if state.verbosity > 2:
                 traceback.print_tb(err.__traceback__)
@@ -953,6 +1017,53 @@ def handle_cli(
 
     # idk when this would happen, but something definitely went wrong here:
     return False  # pragma: no cover
+
+
+def handle_cli(
+    code_before: str,
+    code_after: str,
+    db_type: Optional[str] = None,
+    tables: Optional[list[str] | list[list[str]]] = None,
+    verbose: bool = False,
+    noop: bool = False,
+    magic: bool = False,
+    function_name: Optional[str | tuple[str, ...]] = "define_tables",
+    use_typedal: bool | typing.Literal["auto"] = "auto",
+    output_format: SUPPORTED_OUTPUT_FORMATS = DEFAULT_OUTPUT_FORMAT,
+    output_file: Optional[str | Path | io.StringIO] = None,
+    _update_path: bool = True,
+) -> bool:
+    """
+    SQL-specific wrapper around render_schema_from_code.
+    """
+    is_typedal = (detect_typedal(code_before) or detect_typedal(code_after)) if use_typedal == "auto" else use_typedal
+
+    raw_output = io.StringIO()
+    success = render_schema_from_code(
+        code_after,
+        code_before=code_before,
+        output_file=raw_output,
+        renderer=default_sql_renderer,
+        db_type=db_type,
+        tables=tables,
+        verbose=verbose,
+        noop=noop,
+        magic=magic,
+        function_name=function_name,
+        use_typedal=is_typedal,
+        _update_path=_update_path,
+    )
+    if not success:
+        return False
+    if noop:
+        return True
+
+    return try_format_and_write_sql_output(
+        raw_output,
+        output_file,
+        output_format=output_format,
+        is_typedal=is_typedal,
+    )
 
 
 def core_create(
@@ -1006,7 +1117,8 @@ def core_create(
         functions.add(_function)
 
     file_version, file_path = extract_file_version_and_path(
-        filename, default_version="current" if filename else "stdin"
+        filename,
+        default_version="current" if filename else "stdin",
     )
     file_exists, file_absolute_path = get_absolute_path_info(file_path, file_version, git_root)
 
@@ -1182,12 +1294,10 @@ def core_stub(
         # None will print it to stdout
         output_file = None
 
-    _handle_output(
+    return _format_and_write_sql_output(
         io.StringIO(f"-- {migration_name}\n"),
         output_file,
         output_format=output_format,
         is_typedal=is_typedal,
         default_migration_name=migration_name,
     )
-
-    return True

@@ -11,7 +11,7 @@ import pytest
 from contextlib_chdir import chdir
 
 from src.pydal2sql_core.cli_support import (
-    _handle_output,
+    _format_and_write_sql_output,
     core_alter,
     core_create,
     ensure_no_migrate_on_real_db,
@@ -311,7 +311,7 @@ def test_handle_output(capsys):
         # - default
         # - pydal
         path = Path(f.name)
-        _handle_output(output, path, output_format="default", is_typedal=False)
+        _format_and_write_sql_output(output, path, output_format="default", is_typedal=False)
 
         with path.open() as f:
             written_data = f.read()
@@ -328,7 +328,7 @@ def test_handle_output(capsys):
         # - str
         # - edwh-migrate
         # - typedal
-        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        _format_and_write_sql_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
         captured = capsys.readouterr()
         assert "Written migration" in captured.out
 
@@ -342,7 +342,7 @@ def test_handle_output(capsys):
             assert "001" in written_data
 
         # same output again:
-        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        _format_and_write_sql_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
         captured = capsys.readouterr()
         assert "Nothing to write" in captured.out
 
@@ -358,7 +358,7 @@ def test_handle_output(capsys):
         """
         )
 
-        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        _format_and_write_sql_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
         captured = capsys.readouterr()
         assert "with different contents" in captured.out
         assert "Written migration" not in captured.out
@@ -375,7 +375,7 @@ def test_handle_output(capsys):
         """
         )
 
-        _handle_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
+        _format_and_write_sql_output(output, f.name, output_format="edwh-migrate", is_typedal=True)
         captured = capsys.readouterr()
         assert "Written migration" in captured.out
 
@@ -397,7 +397,7 @@ def test_empty_output(capsys):
         # - default
         # - pydal
         path = Path(f.name)
-        _handle_output(output, path, output_format="edwh-migrate", is_typedal=False)
+        _format_and_write_sql_output(output, path, output_format="edwh-migrate", is_typedal=False)
         captured = capsys.readouterr()
         assert "Nothing to write" in captured.out
 
@@ -488,9 +488,8 @@ def fake_stdin(data: str):
 
 
 def test_indent():
-    with fake_stdin("    raise ValueError('')"):
-        with pytest.raises(IndentationError):
-            core_create()
+    with fake_stdin("    raise ValueError('')"), pytest.raises(IndentationError):
+        core_create()
 
     with fake_stdin("    raise ValueError('')"):
         assert not core_create(magic=True)

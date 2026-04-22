@@ -1,7 +1,5 @@
-import contextlib
 import inspect
 import operator
-import os
 import sys
 import typing
 from dataclasses import dataclass
@@ -11,7 +9,7 @@ from typing import Any, Optional
 
 import configuraptor
 import tomli
-from configuraptor import alias, postpone
+from configuraptor import alias
 from configuraptor.helpers import find_pyproject_toml
 
 from .types import (
@@ -37,7 +35,7 @@ class ReprEnumMeta(EnumMeta):
 
 class DynamicEnum(Enum, metaclass=ReprEnumMeta):
     """
-    Cmobine the enum class with the ReprEnumMeta metaclass.
+    Combine the enum class with the ReprEnumMeta metaclass.
     """
 
 
