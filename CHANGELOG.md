@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v0.6.0 (2026-04-22)
+
+### Feature
+
+* Extract reusable 'render_schema_from_code' from 'handle_cli' ([`578c1bf`](https://github.com/robinvandernoord/pydal2sql-core/commit/578c1bf28f434f994467397e551954d287d454d3))
+
+### Documentation
+
+* Mark support for newer python versions ([`732f231`](https://github.com/robinvandernoord/pydal2sql-core/commit/732f231441a31c66aa0d6c6f8442363b497e38ae))
+
 ## v0.5.1 (2025-11-01)
 
 ### Fix
