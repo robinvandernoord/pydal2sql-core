@@ -9,3 +9,4 @@ build/
 coverage.json
 coverage.xml
 .env
+uv.lock
