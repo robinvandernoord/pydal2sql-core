@@ -8,17 +8,19 @@ import typing
 from pathlib import Path
 from typing import Any
 
-from pydal.adapters import MySQL, Postgre, SQLite
-from pydal.dialects import (
-    Dialect,
-    MySQLDialect,
-    PostgreDialect,
-    SQLDialect,
-    SQLiteDialect,
-)
 from pydal.migrator import Migrator
 from pydal.objects import Table
 
+from ._pydal_compat import (
+    Dialect,
+    MySQL,
+    MySQLDialect,
+    Postgres,
+    PostgresDialect,
+    SQLDialect,
+    SQLite,
+    SQLiteDialect,
+)
 from .helpers import TempdirOrExistingDir, get_typing_args
 from .types import (
     SUPPORTED_DATABASE_TYPES,
@@ -107,13 +109,13 @@ def _build_dummy_migrator(_driver_name: SUPPORTED_DATABASE_TYPES_WITH_ALIASES, /
         )
 
     adapters_per_database: dict[str, typing.Type[SQLAdapter]] = {
-        "psycopg2": Postgre,
+        "psycopg2": Postgres,
         "sqlite3": SQLite,
         "pymysql": MySQL,
     }
 
     dialects_per_database: dict[str, typing.Type[Dialect]] = {
-        "psycopg2": PostgreDialect,
+        "psycopg2": PostgresDialect,
         "sqlite3": SQLiteDialect,
         "pymysql": MySQLDialect,
     }

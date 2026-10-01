@@ -7,6 +7,14 @@ jobs:
   check:
     name: Check with `su6 all`
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # PEP 440 sorts 3.x below the old date-based versions (3.2026... < 2026...),
+        # so an unpinned install always picks the old line; test both explicitly.
+        # TypeDAL currently pins `pydal>=20251012.3` (which excludes 3.x), so pydal is
+        # force-installed afterwards with --no-deps instead of letting pip downgrade TypeDAL.
+        pydal: ['pydal>=20000000', 'pydal>=3,<4']
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -14,4 +22,6 @@ jobs:
           python-version: '3.12'
           cache: 'pip' # caching pip dependencies
       - run: pip install su6[all] .[dev]
+      - run: pip install --no-deps --force-reinstall "${{ matrix.pydal }}"
+      - run: python -c "import pydal, typedal; print('pydal', pydal.__version__)"
       - run: su6 all --coverage 100 --no-stop-after-first-failure
