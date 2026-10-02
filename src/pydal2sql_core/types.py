@@ -7,8 +7,9 @@ import warnings
 from typing import Any
 
 import pydal
-from pydal.adapters import SQLAdapter as _SQLAdapter
 from witchery import Empty
+
+from ._pydal_compat import SQLAdapter as _SQLAdapter
 
 SUPPORTED_DATABASE_TYPES = typing.Literal["psycopg2", "sqlite3", "pymysql"]
 DATABASE_ALIASES_PSQL = typing.Literal["postgresql", "postgres", "psql"]
@@ -23,7 +24,7 @@ SUPPORTED_OUTPUT_FORMATS = _SUPPORTED_OUTPUT_FORMATS | None
 DEFAULT_OUTPUT_FORMAT: SUPPORTED_OUTPUT_FORMATS = "default"
 
 
-class SQLAdapter(_SQLAdapter):  # type: ignore
+class SQLAdapter(_SQLAdapter):  # type: ignore[misc,unused-ignore]
     """
     Typing friendly version of pydal's SQL Adapter.
     """
