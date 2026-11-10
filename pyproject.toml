@@ -1,6 +1,5 @@
 [project]
 name = "pydal2sql-core"
-dynamic = ["version"]
 description = "CLI-agnostic pydal2sql code; Convert pydal define_tables to SQL using pydal's CREATE TABLE logic."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,12 +25,11 @@ dependencies = [
     "witchery >= 0.3.0",
     "TypeDAL",
 ]
+version = "0.7.2"
 
 [project.optional-dependencies]
 dev = [
-    "hatch",
     "su6[all]",
-    "python-semantic-release < 8",
     "psycopg2-binary",
     "pymysql",
     "contextlib_chdir",
@@ -61,21 +59,55 @@ Documentation = "https://github.com/robinvandernoord/pydal2sql-core#readme"
 Issues = "https://github.com/robinvandernoord/pydal2sql-core/issues"
 Source = "https://github.com/robinvandernoord/pydal2sql-core"
 
-[tool.hatch.version]
-path = "src/pydal2sql_core/__about__.py"
+[tool.vommit]
+allow_breaking_bang = true
+allow_breaking_footer = true
+prerelease_token = "beta"
+confirm = true
+ignore = []
 
-
-[tool.semantic_release]
+[tool.vommit.git]
+enabled = true
+origin = "origin"
 branch = "master"
-version_variable = "src/pydal2sql_core/__about__.py:__version__"
-change_log = "CHANGELOG.md"
-upload_to_repository = false
-upload_to_release = false
-build_command = "hatch build"
+on_wrong_branch = "error"
+tag_format = "v{version}"
+commit_format = "{version}"
+
+[tool.vommit.changelog]
+enabled = true
+file = "CHANGELOG.md"
+include_prereleases = false
+placeholder = "<!--next-version-placeholder-->"
+placeholder_regex = "<auto>"
+entry_title_format = "## v{version} ({date:%Y-%m-%d})"
+
+[tool.vommit.changelog.levels]
+feat = "Feature{s}"
+fix = "Fix{es}"
+break = "Breaking Change{s}"
+docs = "Documentation"
+perf = "Performance"
+
+[tool.vommit.pypi]
+enabled = true
+use_keyring = true
+
+[tool.vommit.commands]
+clean = "rm -rf ./dist"
+build = "uv build"
+publish = "uv publish"
+post_publish = ""
+
+[tool.vommit.version_bump_map]
+break = "major"
+feat = "minor"
+fix = "patch"
+perf = "patch"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.12.4,<0.13"]
+build-backend = "uv_build"
 
 [template.plugins.default]
 src-layout = true
