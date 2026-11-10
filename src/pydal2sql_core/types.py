@@ -7,8 +7,9 @@ import warnings
 from typing import Any
 
 import pydal
-from pydal.adapters import SQLAdapter as _SQLAdapter
 from witchery import Empty
+
+from .pydal_compat import SQLAdapter as _SQLAdapter
 
 SUPPORTED_DATABASE_TYPES = typing.Literal["psycopg2", "sqlite3", "pymysql"]
 DATABASE_ALIASES_PSQL = typing.Literal["postgresql", "postgres", "psql"]

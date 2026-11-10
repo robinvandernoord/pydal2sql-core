@@ -5,13 +5,24 @@ on:
       - master
 jobs:
   check:
-    name: Check with `su6 all`
+    name: Check with `su6 all` (pydal ${{ matrix.pydal.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pydal 20261107.0 moved adapters/dialects into pydal.backend_base and pydal.backends;
+        # pydal2sql_core.pydal_compat supports both layouts, so test the old layout and the newest release.
+        pydal:
+          - name: 'old layout (20260520.0)'
+            spec: 'pydal==20260520.0'
+          - name: 'latest'
+            spec: 'pydal>=20261107.0'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip' # caching pip dependencies
-      - run: pip install su6[all] .[dev]
+      - run: pip install su6[all] .[dev] "${{ matrix.pydal.spec }}"
+      - run: pip list | grep -iE '^(pydal|typedal) '
       - run: su6 all --coverage 100 --no-stop-after-first-failure
