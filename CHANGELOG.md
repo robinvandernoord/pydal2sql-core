@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v0.7.3 (2026-11-10)
+
+### Fixes
+* **pydal:** support both legacy and backend-based imports
+* **ci:** run checks on Python 3.12
+
 ## v0.7.2 (2026-04-22)
 
 ### Fix
