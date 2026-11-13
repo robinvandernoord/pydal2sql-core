@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "rich",
-    "pydal",
+    "pydal >= 20260520.0, < 20261107.0", # 20261107.0 (backend-based layout) is not stable yet; pydal_compat handles both once unpinned
     "black",
     "GitPython",
     "witchery >= 0.3.0",
