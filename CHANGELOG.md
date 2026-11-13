@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v0.7.4 (2026-11-13)
+
+### Fix
+* **pydal:** revert support for pydal >= 20261107.0 and pin below it
+
 ## v0.7.3 (2026-11-10)
 
 ### Fixes
